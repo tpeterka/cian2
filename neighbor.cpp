@@ -235,9 +235,6 @@ void enqueue(void* b_, const diy::Master::ProxyWithLink& cp, void*)
 {
   vector <int> vals(num_ints, 0);
 
-  // debug
-  fprintf(stderr, "sending num_items = %d\n", num_items);
-
   for (int i = 0; i < num_items; i++)
   {
     for (int j = 0; j < cp.link()->count(); j++)
