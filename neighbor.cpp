@@ -251,21 +251,13 @@ void parse(void* b_, const diy::Master::ProxyWithLink& cp, void*)
   std::vector<int> in; // gids of sources
   cp.incoming(in);
 
-  // count total number of incoming items and allocate space
-  int item_bytes = num_ints * sizeof(int);
+  b->items.resize(in.size() * num_items);
 
   // copy received items
   for (int i = 0; i < (int)in.size(); i++)
   {
-    diy::BinaryBuffer& bb = cp.incoming(in[i]);
-    int numits = cp.incoming(in[i]).buffer.size() / item_bytes;
-
-    // debug
-    fprintf(stderr, "item_bytes = %d; buffer size = %d bytes; received num_items = %d\n", item_bytes,
-            cp.incoming(in[i]).buffer.size(), numits);
-
-    for (int j = 0; j < numits; j++)
-      b->items.push_back(vector<int>(bb + j * item_bytes, bb + (j + 1) * item_bytes));
+    for(int j = 0; j < num_items; j++)
+      cp.dequeue(in[i], b->items[i * num_items + j]);
   }
 }
 //----------------------------------------------------------------------------
