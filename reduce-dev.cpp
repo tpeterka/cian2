@@ -46,7 +46,7 @@ struct aux_t
 };
 
 // function prototypes
-void GetArgs(int argc, char **argv, int& num_ints, int& nb, diy::Communicator diy_comm);
+void GetArgs(int argc, char **argv, int& num_ints, int& nb, int& k, diy::Communicator diy_comm);
 void PrintResults(double *enqueue_time, double *exchange_time,
 		  double *flush_time, int min_procs, int max_procs,
 		  int min_items, int max_items, int item_size,
@@ -59,6 +59,7 @@ void SwapEnqueue(void* b_, const diy::Master::ProxyWithLink& cp, void*);
 void SwapDequeue(void* b_, const diy::Master::ProxyWithLink& cp, void*);
 void GetPartners(const vector<int>& kv, int cur_r, int gid, vector<int>& partners);
 void GetGrpPos(int cur_r, const vector<int>& kv, int gid, int& g, int& p);
+void FactorK(int tot_b, int k, vector<int>& kv);
 void subset(block_t* b, vector<int>& send_buf, int cur_round);
 void reduce(block_t* b, vector< vector <int > >& recv_bufs, vector<int>& gids);
 
@@ -126,20 +127,17 @@ void reduce(block_t* b, vector< vector <int > >& recv_bufs, vector<int>& gids)
 int main(int argc, char **argv)
 {
   int dim = 3; // number of dimensions in the problem
-  int rank, groupsize; // MPI usual
   int nblocks; // my local number of blocks
   int num_ints; // number of ints in the buffer to be reduced
+  int k; // target k value
 
   // init MPI and diy
   MPI_Init(&argc, &argv);
-  MPI_Comm_size(MPI_COMM_WORLD, &groupsize);
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm mpi_comm = MPI_COMM_WORLD;
-  diy::mpi::communicator world(mpi_comm);
+  diy::mpi::communicator world(MPI_COMM_WORLD);
   diy::Communicator diy_comm(world);
   diy::FileStorage          storage("./DIY.XXXXXX");
 
-  GetArgs(argc, argv, num_ints, nblocks, diy_comm);
+  GetArgs(argc, argv, num_ints, nblocks, k, diy_comm);
 
   // data extents, unused
   Bounds domain;
@@ -150,39 +148,45 @@ int main(int argc, char **argv)
   }
 
   // initialize DIY
-  int tot_blocks = nblocks * groupsize; // total global number of blocks
+  int tot_blocks = nblocks * diy_comm.size(); // total global number of blocks
   int mem_blocks = -1; // everything in core for now
-
-
-  diy::Master               master(diy_comm,
-                                   &create_block,
-                                   &destroy_block,
-                                   mem_blocks,
-                                   &storage,
-                                   &save_block,
-                                   &load_block);
-  diy::RoundRobinAssigner   assigner(world.size(), tot_blocks);
+  diy::Master master(diy_comm, &create_block, &destroy_block, mem_blocks, &storage, &save_block,
+                     &load_block);
+  diy::RoundRobinAssigner assigner(world.size(), tot_blocks);
   AddBlock create(master, num_ints);
-  rank = world.rank();
 
   // decompose
   std::vector<int> my_gids;
   assigner.local_gids(diy_comm.rank(), my_gids);
   nblocks = my_gids.size();
-  diy::decompose(dim, rank, domain, assigner, create);
+  diy::decompose(dim, diy_comm.rank(), domain, assigner, create);
 
   // auxiliary arguments for the swap reduction
   struct aux_t aux;
   aux.num_ints = num_ints; // number of ints in one item
   aux.assigner = &assigner;
-  aux.kv.push_back(2); // TODO: hard-coded for now
+  FactorK(tot_blocks, k, aux.kv);
+
+  // debug
+  if (diy_comm.rank() == 0)
+  {
+    fprintf(stderr, "k values [ ");
+    for (int i = 0; i < (int)aux.kv.size(); i++)
+      fprintf(stderr, "%d ", aux.kv[i]);
+    fprintf(stderr, "]\n");
+  }
 
   // for all rounds
   for (aux.round = 0; aux.round < (int)(aux.kv.size()); aux.round++)
   {
+    // debug
+    fprintf(stderr, "round = %d set expected = %d \n", aux.round, aux.kv[aux.round] - 1);
     master.foreach(&SwapEnqueue, &aux);
     master.communicator().set_expected(aux.kv[aux.round] - 1);
-    master.exchange();
+    for (int i = 0; i < (int)my_gids.size(); i++)
+      master.communicator().incoming(my_gids[i]).clear();
+    // NB: don't call master.exchange(), call master.flush() instead
+    master.communicator().flush();
     master.foreach(&SwapDequeue, &aux);
   }
 
@@ -213,7 +217,7 @@ void SwapEnqueue(void* b_, const diy::Master::ProxyWithLink& cp, void* a_)
     link.add_neighbor(neighbor);
   }
 
-  // TODO: faking the type of buffer and leaving its contents uninitialized
+  // TODO: faking the type of buffer to int
   vector<int> send_buf; // TODO: is there ever a need to have separate buffers for each partner?
 
   // subset the send buffer
@@ -232,15 +236,18 @@ void SwapDequeue(void* b_, const diy::Master::ProxyWithLink& cp, void* a_)
   // get gids of partners for my group in this round
   vector<int> partners; // gids in my group, excluding myself
   GetPartners(a->kv, a->round, b->gid, partners);
-
-  // TODO: faking the type of buffer and leaving its contents uninitialized
-  vector< vector <int> > recv_bufs(a->kv[a->round] - 1);
   // debug
-  fprintf(stderr, "num_partners = %d num_ints = %d partners.size() = %d \n",
-          a->kv[a->round] - 1, a->num_ints, partners.size());
+  fprintf(stderr, "gid %d num_partners %d partner %d\n", b->gid, (int)partners.size(),
+          partners[0]);
+
+  // TODO: faking the type of buffer to int
+  vector< vector <int> > recv_bufs(a->kv[a->round] - 1);
 
   std::vector<int> in; // gids of sources
   cp.incoming(in);
+
+  // debug
+  fprintf(stderr, "in.size() = %d\n", (int)in.size());
 
   for (int i = 0; i < (int)in.size(); i++)
     cp.dequeue(in[i], recv_bufs[i]);
@@ -310,6 +317,46 @@ void GetGrpPos(int cur_r, const vector<int>& kv, int gid, int& g, int& p)
   p = gid / step % kv[cur_r];
 
 }
+//
+// factors the total number of blocks into rounds of a target k value
+//
+// tot_b: total number of blocks
+// k: target (desired) k value
+// kv: final k values (output)
+//
+void FactorK(int tot_b, int k, vector<int>& kv)
+{
+  int rem = tot_b; // unfactored remaining portion of tot_b
+  int j;
+
+  while (rem > 1)
+  {
+    // remainder is divisible by k
+    if (rem % k == 0)
+    {
+      kv.push_back(k);
+      rem /= k;
+    }
+    // if not, start at k and linearly look for smaller factors down to 2
+    else
+    {
+      for (j = k - 1; j > 1; j--)
+      {
+        if (rem % j == 0)
+        {
+          kv.push_back(j);
+          rem /= k;
+          break;
+        }
+      }
+      if (j == 1)
+      {
+        kv.push_back(rem);
+        rem = 1;
+      }
+    } // else
+  } // while
+}
 //----------------------------------------------------------------------------
 //
 // diy::Master callback functions
@@ -341,15 +388,18 @@ void load_block(void* b, diy::BinaryBuffer& bb)
 // argc, argv: usual
 // num_ints: number of ints per item (output)
 // nb: number of local blocks per process (output)
+// k: target k value
 //
-void GetArgs(int argc, char **argv, int& num_ints, int& nb, diy::Communicator diy_comm)
+void GetArgs(int argc, char **argv, int& num_ints, int& nb, int&k, diy::Communicator diy_comm)
 {
-  assert(argc >= 3);
+  assert(argc >= 4);
 
   num_ints = atoi(argv[1]);
   nb = atoi(argv[2]);
+  k = atoi(argv[3]);
 
   if (diy_comm.rank() == 0)
-    fprintf(stderr, "num_procs = %d num_ints = %d nb = %d\n", diy_comm.size(), num_ints, nb);
+    fprintf(stderr, "num_procs = %d num_ints = %d nb = %d k = %d\n",
+            diy_comm.size(), num_ints, nb, k);
 }
 //----------------------------------------------------------------------------
