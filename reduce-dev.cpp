@@ -173,7 +173,7 @@ int main(int argc, char **argv)
 
   // auxiliary arguments for the swap reduction
   struct aux_t aux;
-  aux.num_ints; // number of ints in one item
+  aux.num_ints = num_ints; // number of ints in one item
   aux.assigner = &assigner;
   aux.kv.push_back(2); // TODO: hard-coded for now
 
@@ -181,6 +181,7 @@ int main(int argc, char **argv)
   for (aux.round = 0; aux.round < (int)(aux.kv.size()); aux.round++)
   {
     master.foreach(&SwapEnqueue, &aux);
+    master.communicator().set_expected(aux.kv[aux.round] - 1);
     master.exchange();
     master.foreach(&SwapDequeue, &aux);
   }
@@ -204,17 +205,12 @@ void SwapEnqueue(void* b_, const diy::Master::ProxyWithLink& cp, void* a_)
 
   // setup the link for this goup
   diy::Link link;
-  for (int i = 0; i < a->kv[a->round]; ++i)
+  for (int i = 0; i < a->kv[a->round] - 1; ++i)
   {
     diy::BlockID  neighbor;
-    // TODO: have partners exclude myself?
-    // if so, following test would not be needed
-    if (partners[i] != b->gid) // skip myself
-    {
-      neighbor.gid  = partners[i];
-      neighbor.proc = a->assigner->rank(neighbor.gid);
-      link.add_neighbor(neighbor);
-    }
+    neighbor.gid  = partners[i];
+    neighbor.proc = a->assigner->rank(neighbor.gid);
+    link.add_neighbor(neighbor);
   }
 
   // TODO: faking the type of buffer and leaving its contents uninitialized
@@ -239,8 +235,9 @@ void SwapDequeue(void* b_, const diy::Master::ProxyWithLink& cp, void* a_)
 
   // TODO: faking the type of buffer and leaving its contents uninitialized
   vector< vector <int> > recv_bufs(a->kv[a->round] - 1);
-  for (int i = 0; i < a->kv[a->round] - 1; i++)
-    recv_bufs[i].resize(a->num_ints);
+  // debug
+  fprintf(stderr, "num_partners = %d num_ints = %d partners.size() = %d \n",
+          a->kv[a->round] - 1, a->num_ints, partners.size());
 
   std::vector<int> in; // gids of sources
   cp.incoming(in);
@@ -267,7 +264,7 @@ void GetPartners(const vector<int>& kv, int cur_r, int gid, vector<int>& partner
   int step = 1; // gids jump by this much in the current round
   int pos; // position of the block in the group
   int unused;
-  partners.resize(kv[cur_r] - 1); // TODO: reserve or resize?
+  partners.reserve(kv[cur_r] - 1);
 
   GetGrpPos(cur_r, kv, gid, unused, pos);
 
