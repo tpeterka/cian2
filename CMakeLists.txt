@@ -37,5 +37,10 @@ include_directories         (${DIY_INCLUDE_DIRS}
                              SYSTEM ${MPI_INCLUDE_PATH}
                             )
 
-add_executable              (neighbor neighbor.cpp) # TODO: later add reduce.cpp
+add_executable              (neighbor neighbor.cpp)
+add_executable              (reduce-dev reduce-dev.cpp)
+
+# TODO: later add reduce.cpp
+
 target_link_libraries       (neighbor   ${mpi_libraries})
+target_link_libraries       (reduce-dev   ${mpi_libraries})
