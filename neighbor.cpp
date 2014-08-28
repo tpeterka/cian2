@@ -193,8 +193,7 @@ int main(int argc, char **argv)
       t0 = MPI_Wtime();
 
       // exchange neighbors
-      diy_comm.exchange();
-      diy_comm.flush();
+      master.exchange();
 
       //  parse received items
       master.foreach(&parse);
