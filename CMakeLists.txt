@@ -3,6 +3,11 @@ cmake_minimum_required      (VERSION 2.8)
 
 option                      (optimize       "Build cian with optimization"          ON)
 option                      (debug          "Build cian with debugging on"          OFF)
+option                      (bgq            "Build on BG/Q"                         OFF)
+
+if                          (bgq)
+    add_definitions         (-DBGQ)
+endif                       (bgq)
 
 # Debugging
 if                          (debug)
@@ -23,14 +28,16 @@ add_definitions             (${cxx_flags})
 
 # MPI
 find_package                (MPI REQUIRED)
-set                         (mpi_libraries              ${MPI_C_LIBRARIES} ${MPI_CXX_LIBRARIES})
+if                          (NOT bgq)
+    set                     (mpi_libraries              ${MPI_C_LIBRARIES} ${MPI_CXX_LIBRARIES})
+endif                       (NOT bgq)
 
 # Threads
 find_package                (Threads)
 find_package                (OpenMP)
 
 # DIY
-find_path                   (DIY_INCLUDE_DIRS       diy/types.h)
+find_path                   (DIY_INCLUDE_DIRS           diy/types.h)
 
 set                         (CMAKE_INCLUDE_SYSTEM_FLAG_CXX "-isystem")
 include_directories         (${DIY_INCLUDE_DIRS}
@@ -42,5 +49,7 @@ add_executable              (reduce-dev reduce-dev.cpp)
 
 # TODO: later add reduce.cpp
 
-target_link_libraries       (neighbor   ${mpi_libraries})
-target_link_libraries       (reduce-dev   ${mpi_libraries})
+if                          (NOT bgq)
+    target_link_libraries   (neighbor                   ${mpi_libraries})
+    target_link_libraries   (reduce-dev                 ${mpi_libraries})
+endif                       (NOT bgq)

@@ -45,10 +45,9 @@ struct block_t
 // function prototypes
 void GetArgs(int argc, char **argv, int &min_procs, int &min_items,
 	     int &max_items, int &num_ints, int &nb);
-void PrintResults(double *enqueue_time, double *exchange_time,
-		  double *flush_time, int min_procs, int max_procs,
-		  int min_items, int max_items, int item_size,
-		  int num_item_iters, int proc_factor, int item_factor);
+void PrintResults(double *enqueue_time, double *exchange_time, int min_procs, int max_procs,
+		  int min_items, int max_items, int item_size, int num_item_iters, 
+                  int proc_factor, int item_factor);
 void* create_block();
 void destroy_block(void* b_);
 void save_block(const void* b, diy::BinaryBuffer& bb);
@@ -134,7 +133,6 @@ int main(int argc, char **argv)
     (log2(max_items / min_items) + 1));
   double enqueue_time[num_runs]; // enqueue time for each run
   double exchange_time[num_runs]; // exchange time for each run
-  double flush_time[num_runs]; // flush time for each run
 
   // iterate over processes
   int run = 0; // run number
@@ -200,9 +198,6 @@ int main(int argc, char **argv)
 
       MPI_Barrier(mpi_comm);
       exchange_time[run] = MPI_Wtime() - t0;
-      t0 = MPI_Wtime();
-
-      flush_time[run] = MPI_Wtime() - t0;
 
       num_items *= item_factor;
       run++;
@@ -220,7 +215,7 @@ int main(int argc, char **argv)
   MPI_Barrier(MPI_COMM_WORLD);
   fflush(stderr);
   if (rank == 0)
-    PrintResults(enqueue_time, exchange_time, flush_time, min_procs, max_procs, min_items,
+    PrintResults(enqueue_time, exchange_time, min_procs, max_procs, min_items,
                  max_items, item_size, num_item_iters, proc_factor, item_factor);
 
   MPI_Finalize();
@@ -288,7 +283,6 @@ void load_block(void* b, diy::BinaryBuffer& bb)
 //
 // enqueue_time: enqueue time per run
 // exchange_time: exchange time per run
-// flush_time: flush time per run
 // min_procs, max_procs: process range
 // min_items, max_items: data range
 // item_size: in bytes
@@ -296,10 +290,9 @@ void load_block(void* b, diy::BinaryBuffer& bb)
 // proc_factor: factor change for process iteration
 // item_factor: factor change for item iteration
 //
-void PrintResults(double *enqueue_time, double *exchange_time,
-		  double *flush_time, int min_procs, int max_procs,
-		  int min_items, int max_items, int item_size,
-		  int num_item_iters, int proc_factor, int item_factor) {
+void PrintResults(double *enqueue_time, double *exchange_time, int min_procs, int max_procs,
+		  int min_items, int max_items, int item_size, int num_item_iters,
+                  int proc_factor, int item_factor) {
 
   int item_iter = 0; // item iteration number
   int proc_iter = 0; // process iteration number
@@ -312,8 +305,7 @@ void PrintResults(double *enqueue_time, double *exchange_time,
 
     fprintf(stderr, "\n# %d items * %d bytes / item = %d KB\n",
 	    num_items, item_size, num_items * item_size / 1024);
-    fprintf(stderr, "# procs \t enqueue_time (s) \t exchange_time (s) \t "
-	    "flush_time (s) \n");
+    fprintf(stderr, "# procs \t enqueue_time (s) \t exchange_time (s)\n");
 
     // iterate over processes
     int groupsize = min_procs;
@@ -321,8 +313,8 @@ void PrintResults(double *enqueue_time, double *exchange_time,
     while (groupsize <= max_procs) {
 
       int i = proc_iter * num_item_iters + item_iter; // index into times
-      fprintf(stderr, "%d \t\t %.3lf \t\t\t %.3lf \t\t\t %.3lf\n",
-	      groupsize, enqueue_time[i], exchange_time[i], flush_time[i]);
+      fprintf(stderr, "%d \t\t %.3lf \t\t\t %.3lf\n",
+	      groupsize, enqueue_time[i], exchange_time[i]);
 
       groupsize *= proc_factor;
       proc_iter++;
