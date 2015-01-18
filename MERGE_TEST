@@ -1,0 +1,127 @@
+#!/bin/bash
+
+##PBS -A CSC033
+#PBS -A CI-CCR000086
+#PBS -N t
+#PBS -j oe
+#PBS -l walltime=0:10:00,size=12
+
+#----------------------------------------------------------------------------
+#
+# mpi run script
+#
+# Tom Peterka
+# Argonne National Laboratory
+# 9700 S. Cass Ave.
+# Argonne, IL 60439
+# tpeterka@mcs.anl.gov
+#
+# All rights reserved. May not be used, modified, or copied
+# without permission
+#
+#----------------------------------------------------------------------------
+ARCH=MAC_OSX
+#ARCH=LINUX
+#ARCH=BGP
+#ARCH=BGQ
+#ARCH=FUSION
+#ARCH=XT
+#ARCH=XE
+
+# number of procs
+min_procs=2
+max_procs=8
+
+# procs per node
+#ppn=4 # for BG/P
+ppn=4 # adjustable for BG/Q, allowed 1, 2, 4, 8, 16, 32, 64
+
+# number of nodes
+num_nodes=$[$max_procs / $ppn]
+if [ $num_nodes -lt 1 ]; then
+    num_nodes=1
+fi
+
+# executable
+exe=../install/merge
+
+# number of elements to reduce
+K=1024
+M=1048576
+min_elems=$[1 * 1 * $K]
+max_elems=$[8 * 1 * $K]
+
+# number of blocks per process
+nb=1
+
+# target k-value
+k=2
+
+# op=1: normal, op=0: no op (empty reduce computation)
+op=1
+#------
+#
+# program arguments
+#
+args="-p $min_procs -e $min_elems -E $max_elems -b $nb -k $k -o $op"
+
+#------
+#
+# run commands
+#
+
+if [ "$ARCH" = "MAC_OSX" ]; then
+
+mpiexec -l -n $max_procs $exe $args
+
+#dsymutil $exe ; mpiexec -l -n $max_procs xterm -e gdb -x gdb.run --args $exe $args
+
+#dsymutil $exe ; mpiexec -n $max_procs valgrind -q $exe $args
+
+#dsymutil $exe ; mpiexec -n $max_procs valgrind -q --leak-check=yes $exe $args
+
+fi
+
+if [ "$ARCH" = "LINUX" ]; then
+
+#mpiexec -n $max_procs $exe $args
+
+#mpiexec -n $max_procs xterm -e gdb -x gdb.run --args $exe $args
+
+#mpiexec -n $max_procs valgrind -q $exe $args
+
+mpiexec -n $max_procs valgrind -q --leak-check=yes $exe $args
+
+fi
+
+if [ "$ARCH" = "BGP" ]; then
+
+#cqsub -n $num_nodes -c $max_procs -p UltraVis -t 30 -m vn $exe $args
+cqsub -n $max_procs -c $max_procs -p UltraVis -t 60 -m smp $exe $args
+
+fi
+
+if [ "$ARCH" = "BGQ" ]; then
+
+qsub -n $num_nodes --mode c$ppn -A SDAV -t 30 $exe $args
+
+fi
+
+if [ "$ARCH" = "FUSION" ]; then
+
+mpiexec $exe $args
+
+fi
+
+if [ "$ARCH" = "XT" ]; then
+
+cd /tmp/work/$USER
+aprun -n $max_procs $exe $args
+
+fi
+
+if [ "$ARCH" = "XE" ]; then
+
+aprun -n $max_procs $exe $args
+
+fi

@@ -46,7 +46,7 @@ struct block_t
 void GetArgs(int argc, char **argv, int &min_procs, int &min_items,
 	     int &max_items, int &num_ints, int &nb);
 void PrintResults(double *enqueue_time, double *exchange_time, int min_procs, int max_procs,
-		  int min_items, int max_items, int item_size, int num_item_iters, 
+		  int min_items, int max_items, int item_size, int num_item_iters,
                   int proc_factor, int item_factor);
 void* create_block();
 void destroy_block(void* b_);
@@ -155,6 +155,7 @@ int main(int argc, char **argv)
     // initialize DIY
     tot_blocks = nblocks * groupsize;
     int mem_blocks = -1; // everything in core for now
+    int num_threads = 1; // because of timing
     diy::mpi::communicator    world(mpi_comm);
     diy::FileStorage          storage("./DIY.XXXXXX");
     diy::Communicator         diy_comm(world);
@@ -162,6 +163,7 @@ int main(int argc, char **argv)
                                      &create_block,
                                      &destroy_block,
                                      mem_blocks,
+                                     num_threads,
                                      &storage,
                                      &save_block,
                                      &load_block);
@@ -231,7 +233,7 @@ void enqueue(void* b_, const diy::Master::ProxyWithLink& cp, void*)
 
   for (int i = 0; i < num_items; i++)
   {
-    for (int j = 0; j < cp.link()->count(); j++)
+    for (int j = 0; j < cp.link()->size(); j++)
       cp.enqueue(cp.link()->target(j), vals);
   }
 }

@@ -45,11 +45,11 @@ include_directories         (${DIY_INCLUDE_DIRS}
                             )
 
 add_executable              (neighbor neighbor.cpp)
-add_executable              (reduce-dev reduce-dev.cpp)
-
-# TODO: later add reduce.cpp
+add_executable              (merge    merge.cpp)
+add_executable              (swap     swap.cpp)
 
 if                          (NOT bgq)
     target_link_libraries   (neighbor                   ${mpi_libraries})
-    target_link_libraries   (reduce-dev                 ${mpi_libraries})
+    target_link_libraries   (merge                      ${mpi_libraries})
+    target_link_libraries   (swap                       ${mpi_libraries})
 endif                       (NOT bgq)
