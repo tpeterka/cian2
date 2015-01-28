@@ -3,6 +3,7 @@ cmake_minimum_required      (VERSION 2.8)
 
 option                      (optimize       "Build cian with optimization"          ON)
 option                      (debug          "Build cian with debugging on"          OFF)
+option                      (threads        "Build cian with threading on"          OFF)
 option                      (bgq            "Build on BG/Q"                         OFF)
 
 if                          (bgq)
@@ -33,8 +34,13 @@ if                          (NOT bgq)
 endif                       (NOT bgq)
 
 # Threads
-find_package                (Threads)
-find_package                (OpenMP)
+if                          (threads)
+    find_package            (Threads)
+    find_package            (OpenMP)
+else                        (threads)
+    add_definitions         (-DDIY_NO_THREADS)
+endif                       (threads)
+
 
 # DIY
 find_path                   (DIY_INCLUDE_DIRS           diy/types.h)
@@ -53,3 +59,9 @@ if                          (NOT bgq)
     target_link_libraries   (merge                      ${mpi_libraries})
     target_link_libraries   (swap                       ${mpi_libraries})
 endif                       (NOT bgq)
+
+if                          (threads)
+    target_link_libraries   (neighbor                   ${CMAKE_THREAD_LIBS_INIT})
+    target_link_libraries   (merge                      ${CMAKE_THREAD_LIBS_INIT})
+    target_link_libraries   (swap                       ${CMAKE_THREAD_LIBS_INIT})
+endif                       (threads)
