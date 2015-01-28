@@ -440,37 +440,49 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
 //
 void NoopSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPartners& partners)
 {
-  Block*    b        = static_cast<Block*>(b_);
+  Block* b = static_cast<Block*>(b_);
+  int sub_start = 0;                           // subset starting index
+  int sub_size = b->data.size();               // subset size
 
-  // dequeue all incoming neighbors
-  // need all incoming data up front so that it can be composited in a particular order
-  // in this test, the order is increasing gid
-  std::vector< vector< float > > in_vals;
-  in_vals.resize(rp.in_link().size());
-  int mypos; // my position in the link
+  // find my position in the link
+  int mypos;
   for (unsigned i = 0; i < rp.in_link().size(); ++i)
-    rp.dequeue(rp.in_link().target(i).gid, in_vals[i]);
+  {
+    if (rp.in_link().target(i).gid == rp.gid())
+      mypos = i;
+  }
+
+  // dequeue and reduce
+  int k = rp.in_link().size();
+  for (unsigned i = 0; i < k; ++i)
+  {
+    if (rp.in_link().target(i).gid == rp.gid())
+      continue;
+
+    // allocate receive buffer to correct subsize and then dequeue
+    if (i == k - 1) // last subset may be different size
+      sub_size = b->sub_size - (i * b->sub_size / k);
+    else
+      sub_size = b->sub_size / k;
+    std::vector< float > in(sub_size);
+    rp.dequeue(rp.in_link().target(i).gid, &in[0], sub_size);
+  }
 
   if (!rp.out_link().size())
     return;
 
   // enqueue
-  int k = rp.out_link().size();
-  vector <float> send_buf; // subset of b's data to be sent, TODO: avoidable?
+  k = rp.out_link().size();
   for (unsigned i = 0; i < k; i++)
   {
     // temp versions of sub_start and sub_size are for sending
     // final versions stored in the block are updated upon receiving (above)
-    int sub_start = b->sub_start + (i * b->sub_size / k);
-    int sub_size;
+    sub_start = b->sub_start + (i * b->sub_size / k);
     if (i == k - 1) // last subset may be different size
       sub_size = b->sub_size - (i * b->sub_size / k);
     else
       sub_size = b->sub_size / k;
-    send_buf.resize(sub_size);
-    for (int j = 0; j < sub_size; j++)    // TODO: any way to avoid this copy?
-      send_buf[j] = b->data[b->sub_start + j];
-    rp.enqueue(rp.out_link().target(i), send_buf);
+    rp.enqueue(rp.out_link().target(i), &b->data[sub_start], sub_size);
   }
 }
 //
