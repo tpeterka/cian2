@@ -31,6 +31,8 @@
 #include <diy/serialization.hpp>
 #include <diy/decomposition.hpp>
 
+#include "opts.h"
+
 using namespace std;
 
 typedef  diy::ContinuousBounds       Bounds;
@@ -345,18 +347,24 @@ void PrintResults(double *enqueue_time, double *exchange_time, int min_procs, in
 void GetArgs(int argc, char **argv, int &min_procs,
 	     int &min_items, int &max_items, int &num_ints, int &nb) {
 
-  assert(argc >= 6);
-
-  min_procs = atoi(argv[1]);
-  min_items = atoi(argv[2]);
-  max_items = atoi(argv[3]);
-  num_ints = atoi(argv[4]);
-  nb = atoi(argv[5]);
-
+  using namespace opts;
+  Options ops(argc, argv);
   int max_procs;
   int rank;
   MPI_Comm_size(MPI_COMM_WORLD, &max_procs);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+  if (ops >> Present('h', "help", "show help") ||
+      !(ops >> PosOption(min_procs)
+        >> PosOption(min_items)
+        >> PosOption(max_items)
+        >> PosOption(num_ints)
+        >> PosOption(nb)))
+  {
+    if (rank == 0)
+      fprintf(stderr, "Usage: %s min_procs min_items max_items num_ints nb\n", argv[0]);
+    exit(1);
+  }
 
   if (rank == 0) {
     fprintf(stderr, "min_procs = %d max_procs = %d "

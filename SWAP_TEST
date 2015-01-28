@@ -63,7 +63,7 @@ op=1
 #
 # program arguments
 #
-args="-p $min_procs -e $min_elems -E $max_elems -b $nb -k $k -o $op"
+args="$min_procs $min_elems $max_elems $nb $k $op"
 
 #------
 #

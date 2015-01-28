@@ -29,21 +29,21 @@ using namespace std;
 typedef  diy::ContinuousBounds       Bounds;
 typedef  diy::RegularContinuousLink  RCLink;
 
-// globals
-// op needs to be global because there is no other way to get an MPI custom operator to see it
-int op; // 1=normal, 0 = no op
-
 // function prototypes
 void GetArgs(int argc, char **argv, int &min_procs, int &min_elems,
-	     int &max_elems, int &nb, int &target_k, int &op);
-void MpiReduce(double *reduce_time, int run, float *in_data, MPI_Comm comm, int num_elems);
+	     int &max_elems, int &nb, int &target_k, bool &op);
+void MpiReduce(double *reduce_time, int run, float *in_data, MPI_Comm comm, int num_elems,
+               bool op);
 void DiyMerge(double *merge_time, int run, int k, MPI_Comm comm, int dim, int totblocks,
-              bool contiguous, diy::Master& master, diy::ContiguousAssigner& assigner);
+              bool contiguous, diy::Master& master, diy::ContiguousAssigner& assigner, bool op);
 void PrintResults(double *reduce_time, double *merge_time, int min_procs,
 		  int max_procs, int min_elems, int max_elems);
-void ComputeMerge(void* b_, const diy::ReduceProxy& rp, const diy::RegularMergePartners& partners);
-void Over(void *in, void *inout, int *len, MPI_Datatype *type);
+void ComputeMerge(void* b_, const diy::ReduceProxy& rp, const diy::RegularMergePartners&);
+void NoopMerge(void* b_, const diy::ReduceProxy& rp, const diy::RegularMergePartners&);
+void Over(void *in, void *inout, int *len, MPI_Datatype*);
+void Noop(void*, void*, int*, MPI_Datatype*) {}
 void ResetBlock(void* b_, const diy::Master::ProxyWithLink& cp, void*);
+void PrintBlock(void* b_, const diy::Master::ProxyWithLink& cp, void*);
 
 // block
 struct Block
@@ -55,11 +55,16 @@ struct Block
     { diy::save(bb, *static_cast<const Block*>(b)); }
   static void     load(void* b, diy::BinaryBuffer& bb)
     { diy::load(bb, *static_cast<Block*>(b)); }
-  void generate_data(size_t n)
+  void generate_data(size_t n, int tot_b)
   {
     data.resize(n);
-    for (size_t i = 0; i < n; ++i)
-      data[i] = gid * n + i;
+    for (size_t i = 0; i < n / 4; ++i)
+    {
+      data[4 * i    ] = gid * n / 4 + i;
+      data[4 * i + 1] = gid * n / 4 + i;
+      data[4 * i + 2] = gid * n / 4 + i;
+      data[4 * i + 3] = gid / (tot_b - 1);
+    }
   }
 
   vector<float> data;
@@ -70,7 +75,8 @@ struct Block
 //
 struct AddBlock
 {
-  AddBlock(diy::Master& master_, size_t num_elems_): master(master_), num_elems(num_elems_) {}
+  AddBlock(diy::Master& master_, size_t num_elems_, int tot_blocks_):
+    master(master_), num_elems(num_elems_), tot_blocks(tot_blocks_) {}
 
   void operator()(int gid, const Bounds& core, const Bounds& bounds, const Bounds& domain,
                    const RCLink& link) const
@@ -80,35 +86,53 @@ struct AddBlock
     diy::Master&  m = const_cast<diy::Master&>(master);
     m.add(gid, b, l);
     b->gid = gid;
-    b->generate_data(num_elems);
+    b->generate_data(num_elems, tot_blocks);
   }
 
   diy::Master&  master;
   size_t num_elems;
+  int tot_blocks;
 };
 //
 // reset the size and data values in a block
+// args[0]: num_elems
+// args[1]: tot_blocks
 //
-void ResetBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* n)
+void ResetBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* args)
 {
     Block* b   = static_cast<Block*>(b_);
-    int num_elems = *(int*)n;
-    b->generate_data(num_elems);
+    int num_elems = *(int*)args;
+    int tot_blocks = *((int*)args + 1);
+    b->generate_data(num_elems, tot_blocks);
+}
+//
+// prints data values in a block (debugging)
+//
+void PrintBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* args)
+{
+  Block* b   = static_cast<Block*>(b_);
+  int tot_b = *(int*)args;
+  if (b->gid == 0)
+  {
+    for (int i = 0; i < b->data.size(); i++)
+      fprintf(stderr, "diy reduced data[%d] = %.1f\n", i, b->data[i]);
+  }
 }
 //
 // main
 //
 int main(int argc, char **argv)
 {
-  int dim = 3; // number of dimensions in the problem
-  int nblocks; // local number of blocks
-  int tot_blocks; // total number of blocks
-  int target_k; // target k-value
+  int dim = 1;              // number of dimensions in the problem
+  int nblocks;              // local number of blocks
+  int tot_blocks;           // total number of blocks
+  int target_k;             // target k-value
   int min_elems, max_elems; // min, max number of elements per block
-  int num_elems; // current number of data elements per block
-  int rank, groupsize; // MPI usual
-  int min_procs; // minimum number of processes
-  int max_procs; // maximum number of processes (groupsize of MPI_COMM_WORLD)
+  int num_elems;            // current number of data elements per block
+  int rank, groupsize;      // MPI usual
+  int min_procs;            // minimum number of processes
+  int max_procs;            // maximum number of processes (groupsize of MPI_COMM_WORLD)
+  bool op;                  // actual operator or no-op
 
   MPI_Init(&argc, &argv);
   MPI_Comm_size(MPI_COMM_WORLD, &max_procs);
@@ -151,8 +175,8 @@ int main(int argc, char **argv)
 
     // initialize DIY
     tot_blocks = nblocks * groupsize;
-    int mem_blocks = -1; // everything in core for now
-    int num_threads = 1; // needed in order to do timing
+    int mem_blocks = -1;      // everything in core for now
+    int num_threads = 1;      // needed in order to do timing
     diy::mpi::communicator    world(comm);
     diy::FileStorage          storage("./DIY.XXXXXX");
     diy::Communicator         diy_comm(world);
@@ -165,25 +189,28 @@ int main(int argc, char **argv)
                                      &Block::save,
                                      &Block::load);
     diy::ContiguousAssigner   assigner(world.size(), tot_blocks);
-    AddBlock                  create(master, min_elems);
+    AddBlock                  create(master, min_elems, tot_blocks);
     diy::decompose(dim, world.rank(), domain, assigner, create);
 
     // iterate over number of elements
     num_elems = min_elems;
     while (num_elems <= max_elems)
     {
-      // MPI reduce
-      // only for one block per process
-      for (int i = 0; i < num_elems; i++)
-        in_data[i] = rank * num_elems + i;
+      // MPI reduce, only for one block per process
       if (tot_blocks == groupsize)
-	MpiReduce(reduce_time, run, in_data, comm, num_elems);
+	MpiReduce(reduce_time, run, in_data, comm, num_elems, op);
 
       // DIY merge
-      DiyMerge(merge_time, run, target_k, comm, dim, tot_blocks, true, master, assigner);
+      DiyMerge(merge_time, run, target_k, comm, dim, tot_blocks, true, master, assigner, op);
+
+      // debug
+//       master.foreach(PrintBlock, &tot_blocks);
 
       // re-initialize input data (in-place DIY merge disturbed it)
-      master.foreach(ResetBlock, &num_elems);
+      int args[2];
+      args[0] = num_elems;
+      args[1] = tot_blocks;
+      master.foreach(ResetBlock, args);
 
       num_elems *= 2; // double the number of elements every time
       run++;
@@ -215,28 +242,46 @@ int main(int argc, char **argv)
 // in_data: input data
 // comm: current communicator
 // num_elems: current number of elements
+// op: run actual op or noop
 //
-void MpiReduce(double *reduce_time, int run, float *in_data, MPI_Comm comm, int num_elems)
+void MpiReduce(double *reduce_time, int run, float *in_data, MPI_Comm comm, int num_elems,
+               bool op)
 {
-  MPI_Op op; // custom operator
-  MPI_Op_create(&Over, 0, &op); // nonommutative
+  // init
+  MPI_Op op_fun;                      // custom operator
+  if (op)
+    MPI_Op_create(&Over, 0, &op_fun); // noncommutative
+  else
+    MPI_Op_create(&Noop, 0, &op_fun); // noncommutative, even if it doesn't do anything
   float *reduce_data = new float[num_elems];
+  int rank;
+  int groupsize;
+  MPI_Comm_rank(comm, &rank);
+  MPI_Comm_size(comm, &groupsize);
+  for (int i = 0; i < num_elems / 4; i++)
+  {
+    in_data[4 * i    ] = rank * num_elems / 4 + i;
+    in_data[4 * i + 1] = rank * num_elems / 4 + i;
+    in_data[4 * i + 2] = rank * num_elems / 4 + i;
+    in_data[4 * i + 3] = rank / (groupsize - 1);
+  }
+
+  // reduce
   MPI_Barrier(comm);
   double t0 = MPI_Wtime();
-  MPI_Reduce((void *)in_data, (void *)reduce_data, num_elems, MPI_FLOAT, op, 0, comm);
+  MPI_Reduce((void *)in_data, (void *)reduce_data, num_elems, MPI_FLOAT, op_fun, 0, comm);
   MPI_Barrier(comm);
   reduce_time[run] = MPI_Wtime() - t0;
 
   // debug: print the reduced data
-//   int rank;
-//   MPI_Comm_rank(comm, &rank);
 //   if (rank == 0) {
 //     for (int i = 0; i < num_elems; i++)
-//       fprintf(stderr, "reduce_data[%d] = %.3f\n", i, reduce_data[i]);
+//       fprintf(stderr, "mpi reduced data[%d] = %.1f\n", i, reduce_data[i]);
 //   }
 
+  // cleanup
   delete[] reduce_data;
-  MPI_Op_free(&op);
+  MPI_Op_free(&op_fun);
 }
 //
 // DIY merge
@@ -249,15 +294,19 @@ void MpiReduce(double *reduce_time, int run, float *in_data, MPI_Comm comm, int 
 // totblocks: total number of blocks
 // contiguous: use contiguous partners
 // master, assigner: diy usual
+// op: run actual op or noop
 //
 void DiyMerge(double *merge_time, int run, int k, MPI_Comm comm, int dim, int totblocks,
-              bool contiguous, diy::Master& master, diy::ContiguousAssigner& assigner)
+              bool contiguous, diy::Master& master, diy::ContiguousAssigner& assigner, bool op)
 {
   MPI_Barrier(comm);
   double t0 = MPI_Wtime();
 
   diy::RegularMergePartners  partners(dim, totblocks, k, contiguous);
-  diy::reduce(master, assigner, partners, ComputeMerge);
+  if (op)
+    diy::reduce(master, assigner, partners, ComputeMerge);
+  else
+    diy::reduce(master, assigner, partners, NoopMerge);
 
   MPI_Barrier(comm);
   merge_time[run] = MPI_Wtime() - t0;
@@ -272,9 +321,9 @@ void DiyMerge(double *merge_time, int run, int k, MPI_Comm comm, int dim, int to
 void PrintResults(double *reduce_time, double *merge_time, int min_procs,
 		  int max_procs, int min_elems, int max_elems)
 {
-  int elem_iter = 0; // element iteration number
+  int elem_iter = 0;                                            // element iteration number
   int num_elem_iters = (int)(log2(max_elems / min_elems) + 1);  // number of element iterations
-  int proc_iter = 0; // process iteration number
+  int proc_iter = 0;                                            // process iteration number
 
   fprintf(stderr, "----- Timing Results -----\n");
 
@@ -310,74 +359,82 @@ void PrintResults(double *reduce_time, double *merge_time, int min_procs,
 // performs the "over" operator for image compositing
 // ordering of the over operator is by gid
 //
-void ComputeMerge(void* b_, const diy::ReduceProxy& rp, const diy::RegularMergePartners& partners)
+void ComputeMerge(void* b_, const diy::ReduceProxy& rp, const diy::RegularMergePartners&)
 {
-  Block*    b        = static_cast<Block*>(b_);
+  Block* b = static_cast<Block*>(b_);
 
-  vector< pair<int, int> > gidpos;  // (incoming gid, link number), will be sorted on gid
-
-  // dequeue all incoming neighbors
-  // need all incoming data up front so that it can be composited in a particular order
-  // in this test, the order is increasing gid
-  std::vector< vector< float > > in_vals;
-  in_vals.resize(rp.in_link().size());
+  // dequeue and reduce
   for (unsigned i = 0; i < rp.in_link().size(); ++i)
   {
-    rp.dequeue(rp.in_link().target(i).gid, in_vals[i]);
-    gidpos.push_back(make_pair(rp.in_link().target(i).gid, i));
+    if (rp.in_link().target(i).gid == rp.gid())
+        continue;
+    std::vector< float > in;
+    rp.dequeue(rp.in_link().target(i).gid, in);
 //     fprintf(stderr, "[%d:%d] Received %d values from [%d]\n",
 //             rp.gid(), rp.round(), (int)in_vals[i].size(), rp.in_link().target(i).gid);
-  }
-
-  if (op && rp.in_link().size()) // skip if NOOP
-  {
-    sort(gidpos.begin(), gidpos.end()); // sorts on first element of pair (gid) by default
-    int inout = gidpos[rp.in_link().size() - 1].second; // link position of result
-
-    // merge with each of my neighbors, in gid order (as in image compositing)
-    for (unsigned i = 0; i < rp.in_link().size() - 1; ++i)
+    for (int j = 0; j < b->data.size() / 4; j++)
     {
-      int in = gidpos[i].second; // link position of incoming item
-      for (int j = 0; j < b->data.size() / 4; j++)
-      {
-        in_vals[inout][j * 4    ] =
-          (1.0f - in_vals[in][j * 4 + 3]) * in_vals[inout][j * 4    ] + in_vals[in][j * 4    ];
-        in_vals[inout][j * 4 + 1] =
-          (1.0f - in_vals[in][j * 4 + 3]) * in_vals[inout][j * 4 + 1] + in_vals[in][j * 4 + 1];
-        in_vals[inout][j * 4 + 2] =
-          (1.0f - in_vals[in][j * 4 + 3]) * in_vals[inout][j * 4 + 2] + in_vals[in][j * 4 + 2];
-        in_vals[inout][j * 4 + 3] =
-          (1.0f - in_vals[in][j * 4 + 3]) * in_vals[inout][j * 4 + 3] + in_vals[in][j * 4 + 3];
-      }
-    }
+//       fprintf(stderr, "b = (%.1f %.1f %.1f %.1f)  i = (%.1f %.1f %.1f %.1f)\n",
+//               b->data[j * 4], b->data[j * 4 + 1], b->data[j * 4 + 2], b->data[j * 4 + 3],
+//               in[j * 4], in[j * 4 + 1], in[j * 4 + 2], in[j * 4 + 3]);
 
-    b->data = in_vals[inout];
+      b->data[j * 4    ] =
+        (1.0f - in[j * 4 + 3]) * b->data[j * 4    ] + in[j * 4    ];
+      b->data[j * 4 + 1] =
+        (1.0f - in[j * 4 + 3]) * b->data[j * 4 + 1] + in[j * 4 + 1];
+      b->data[j * 4 + 2] =
+        (1.0f - in[j * 4 + 3]) * b->data[j * 4 + 2] + in[j * 4 + 2];
+      b->data[j * 4 + 3] =
+        (1.0f - in[j * 4 + 3]) * b->data[j * 4 + 3] + in[j * 4 + 3];
+
+//       fprintf(stderr, "b+ = (%.1f %.1f %.1f %.1f)\n",
+//               b->data[j * 4], b->data[j * 4 + 1], b->data[j * 4 + 2], b->data[j * 4 + 3]);
+    }
   }
 
   // enqueue
   if (rp.out_link().size())
   {
-    assert(rp.out_link().size() == 1); // sanity
     rp.enqueue(rp.out_link().target(0), b->data);
 //     fprintf(stderr, "[%d:%d] Sent %lu values to [%d]\n",
 //             rp.gid(), rp.round(), b->data.size(), rp.out_link().target(0).gid);
   }
 }
 //
+// Noop for DIY merge
+//
+void NoopMerge(void* b_, const diy::ReduceProxy& rp, const diy::RegularMergePartners&)
+{
+  Block*    b        = static_cast<Block*>(b_);
+
+  // dequeue all incoming neighbors
+  for (unsigned i = 0; i < rp.in_link().size(); ++i)
+  {
+    if (rp.in_link().target(i).gid == rp.gid())
+        continue;
+    std::vector< float > in;
+    rp.dequeue(rp.in_link().target(i).gid, in);
+  }
+
+  // enqueue
+  if (rp.out_link().size())
+    rp.enqueue(rp.out_link().target(0), b->data);
+}
+//
 // performs in over inout
 // inout is the result
 // both in and inout have same size in pixels
 //
-void Over(void *in, void *inout, int *len, MPI_Datatype *type)
+void Over(void *in, void *inout, int *len, MPI_Datatype*)
 {
-  // quiet the warnings
-  type = type;
-
-  if (!op)
-    return;
-
   for (int i = 0; i < *len / 4; i++)
   {
+//     fprintf(stderr, "inout = (%.1f %.1f %.1f %.1f)  in = (%.1f %.1f %.1f %.1f)\n",
+//             ((float *)inout)[i * 4], ((float *)inout)[i * 4 + 1],
+//             ((float *)inout)[i * 4 + 2], ((float *)inout)[i * 4 + 3],
+//             ((float *)in)[i * 4], ((float *)in)[i * 4 + 1],
+//             ((float *)in)[i * 4 + 2], ((float *)in)[i * 4 + 3]);
+
     ((float *)inout)[i * 4] =
       (1.0f - ((float *)in)[i * 4 + 3]) * ((float *)inout)[i * 4] +
       ((float *)in)[i * 4];
@@ -393,6 +450,10 @@ void Over(void *in, void *inout, int *len, MPI_Datatype *type)
     ((float *)inout)[i * 4 + 3] =
       (1.0f - ((float *)in)[i * 4 + 3]) * ((float *)inout)[i * 4 + 3] +
       ((float *)in)[i * 4 + 3];
+
+//     fprintf(stderr, "inout+ = (%.1f %.1f %.1f %.1f)\n",
+//             ((float *)inout)[i * 4], ((float *)inout)[i * 4 + 1],
+//             ((float *)inout)[i * 4 + 2], ((float *)inout)[i * 4 + 3]);
   }
 }
 //
@@ -404,51 +465,35 @@ void Over(void *in, void *inout, int *len, MPI_Datatype *type)
 // max_elems: maximum number of elements to reduce (output)
 // nb: number of blocks per process (output)
 // target_k: target k-value (output)
+// op: whether to run to operator or no op
 //
 void GetArgs(int argc, char **argv, int &min_procs,
-	     int &min_elems, int &max_elems, int &nb, int &target_k, int &op)
+	     int &min_elems, int &max_elems, int &nb, int &target_k, bool &op)
 {
   using namespace opts;
   Options ops(argc, argv);
-
-  // TODO: hack is needed to quiet valgrind errors
-  // ask Dmitriy how to fix this
-  min_procs = min_elems = max_elems = nb = target_k = op = 0;
-
-  ops
-    >> Option('p', "min_p",    min_procs, "min number of procs")
-    >> Option('e', "min_e",    min_elems, "min number of elements")
-    >> Option('E', "max_e",    max_elems, "max number of elements")
-    >> Option('b', "nb",       nb,        "nummber of blocks per process")
-    >> Option('k', "target_k", target_k,  "target k value")
-    >> Option('o', "op",       op,        "reduction operator or noop (0 or 1)")
-    ;
-
-  if (ops >> Present('h', "help", "show help"))
-  {
-      std::cout << "Usage: " << argv[0] << " [OPTIONS]\n";
-      std::cout << ops;
-      exit(1);
-  }
-
-  // DEPRECATED
-//   assert(argc >= 7);
-//   min_procs = atoi(argv[1]);
-//   min_elems = atoi(argv[2]);
-//   max_elems = atoi(argv[3]);
-//   nb = atoi(argv[4]);
-//   target_k = atoi(argv[5]);
-//   op = atoi(argv[6]);
-
-  // check there is at least four elements (eg., one pixel) per block
   int max_procs;
   int rank;
   MPI_Comm_size(MPI_COMM_WORLD, &max_procs);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+  if (ops >> Present('h', "help", "show help") ||
+      !(ops >> PosOption(min_procs)
+        >> PosOption(min_elems)
+        >> PosOption(max_elems)
+        >> PosOption(nb)
+        >> PosOption(target_k)
+        >> PosOption(op)))
+  {
+    if (rank == 0)
+      fprintf(stderr, "Usage: %s min_procs min_elems max_elems nb target_k op\n", argv[0]);
+    exit(1);
+  }
+
+  // check there is at least four elements (eg., one pixel) per block
   assert(min_elems >= 4 *nb * max_procs); // at least one element per block
 
   if (rank == 0)
     fprintf(stderr, "min_procs = %d min_elems = %d max_elems = %d nb = %d "
 	    "target_k = %d\n", min_procs, min_elems, max_elems, nb, target_k);
 }
-//----------------------------------------------------------------------------
