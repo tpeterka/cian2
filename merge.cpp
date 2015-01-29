@@ -86,7 +86,6 @@ struct AddBlock
     diy::Master&  m = const_cast<diy::Master&>(master);
     m.add(gid, b, l);
     b->gid = gid;
-    b->generate_data(num_elems, tot_blocks);
   }
 
   diy::Master&  master;
@@ -201,19 +200,18 @@ int main(int argc, char **argv)
 	MpiReduce(reduce_time, run, in_data, comm, num_elems, op);
 
       // DIY merge
+      // initialize input data
+      int args[2];
+      args[0] = num_elems;
+      args[1] = tot_blocks;
+      master.foreach(ResetBlock, args);
+
       DiyMerge(merge_time, run, target_k, comm, dim, tot_blocks, true, master, assigner, op);
 
       // debug
 //       master.foreach(PrintBlock, &tot_blocks);
 
       num_elems *= 2; // double the number of elements every time
-
-      // re-initialize input data (in-place DIY merge disturbed it)
-      int args[2];
-      args[0] = num_elems;
-      args[1] = tot_blocks;
-      master.foreach(ResetBlock, args);
-
       run++;
 
     } // elem iteration
@@ -419,6 +417,8 @@ void NoopMerge(void* b_, const diy::ReduceProxy& rp, const diy::RegularMergePart
 
   // enqueue
   if (rp.out_link().size())
+  {
+    //printf("[%d]: round %d enqueueing %d\n", rp.gid(), rp.round(), b->data.size());
     rp.enqueue(rp.out_link().target(0), b->data);
   }
 }
