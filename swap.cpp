@@ -123,7 +123,7 @@ void PrintBlock(void* b_, const diy::Master::ProxyWithLink& cp, void*)
 //
 int main(int argc, char **argv)
 {
-  int dim = 3;              // number of dimensions in the problem
+  int dim = 1;              // number of dimensions in the problem
   int nblocks;              // local number of blocks
   int tot_blocks;           // total number of blocks
   int target_k;             // target k-value
@@ -206,13 +206,14 @@ int main(int argc, char **argv)
       // debug
 //       master.foreach(PrintBlock, &tot_blocks);
 
+      num_elems *= 2; // double the number of elements every time
+
       // re-initialize input data (in-place DIY swap disturbed it)
       int args[2];
       args[0] = num_elems;
       args[1] = tot_blocks;
       master.foreach(ResetBlock, args);
 
-      num_elems *= 2; // double the number of elements every time
       run++;
 
     } // elem iteration

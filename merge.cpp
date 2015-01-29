@@ -206,13 +206,14 @@ int main(int argc, char **argv)
       // debug
 //       master.foreach(PrintBlock, &tot_blocks);
 
+      num_elems *= 2; // double the number of elements every time
+
       // re-initialize input data (in-place DIY merge disturbed it)
       int args[2];
       args[0] = num_elems;
       args[1] = tot_blocks;
       master.foreach(ResetBlock, args);
 
-      num_elems *= 2; // double the number of elements every time
       run++;
 
     } // elem iteration
@@ -419,6 +420,7 @@ void NoopMerge(void* b_, const diy::ReduceProxy& rp, const diy::RegularMergePart
   // enqueue
   if (rp.out_link().size())
     rp.enqueue(rp.out_link().target(0), b->data);
+  }
 }
 //
 // performs in over inout
