@@ -88,9 +88,6 @@ struct AddBlock
     diy::Master&  m = const_cast<diy::Master&>(master);
     m.add(gid, b, l);
     b->gid = gid;
-    b->generate_data(num_elems, tot_blocks);
-    b->sub_start = 0;
-    b->sub_size = num_elems;
   }
 
   diy::Master&  master;
@@ -108,6 +105,8 @@ void ResetBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* args)
     int num_elems = *(int*)args;
     int tot_blocks = *((int*)args + 1);
     b->generate_data(num_elems, tot_blocks);
+    b->sub_start = 0;
+    b->sub_size = num_elems;
 }
 //
 // prints data values in a block (debugging)
@@ -201,19 +200,19 @@ int main(int argc, char **argv)
 	MpiReduceScatter(reduce_scatter_time, run, in_data, comm, num_elems, op);
 
       // DIY swap
-      DiySwap(swap_time, run, target_k, comm, dim, tot_blocks, true, master, assigner, op);
+      // initialize input data
+      int args[2];
+      args[0] = num_elems;
+      args[1] = tot_blocks;
+
+      master.foreach(ResetBlock, args);
+
+      DiySwap(swap_time, run, target_k, comm, dim, tot_blocks, false, master, assigner, op);
 
       // debug
 //       master.foreach(PrintBlock, &tot_blocks);
 
       num_elems *= 2; // double the number of elements every time
-
-      // re-initialize input data (in-place DIY swap disturbed it)
-      int args[2];
-      args[0] = num_elems;
-      args[1] = tot_blocks;
-      master.foreach(ResetBlock, args);
-
       run++;
 
     } // elem iteration
@@ -251,9 +250,9 @@ void MpiReduceScatter(double *reduce_scatter_time, int run, float *in_data, MPI_
   // init
   MPI_Op op_fun;                       // custom operator
   if (op)
-    MPI_Op_create(&Over, 0, &op_fun);  // noncommutative
+    MPI_Op_create(&Over, 1, &op_fun);  // commutative
   else
-    MPI_Op_create(&Noop, 0, &op_fun);  // noncommutative, even if it doesn't do anything
+    MPI_Op_create(&Noop, 1, &op_fun);  // commutative, even if it doesn't do anything
   float *reduce_scatter_data = new float[num_elems];
   int rank;
   int groupsize;
@@ -306,12 +305,14 @@ void DiySwap(double *swap_time, int run, int k, MPI_Comm comm, int dim, int totb
   MPI_Barrier(comm);
   double t0 = MPI_Wtime();
 
+  //printf("---- %d ----\n", totblocks);
   diy::RegularSwapPartners  partners(dim, totblocks, k, contiguous);
   if (op)
     diy::reduce(master, assigner, partners, ComputeSwap);
   else
     diy::reduce(master, assigner, partners, NoopSwap);
 
+  //printf("------------\n");
   MPI_Barrier(comm);
   swap_time[run] = MPI_Wtime() - t0;
 }
@@ -442,8 +443,8 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
 void NoopSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPartners& partners)
 {
   Block* b = static_cast<Block*>(b_);
-  int sub_start = 0;                           // subset starting index
-  int sub_size = b->data.size();               // subset size
+  int sub_start;            // subset starting index
+  int sub_size;             // subset size
 
   // find my position in the link
   int mypos;
@@ -483,8 +484,16 @@ void NoopSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPartne
       sub_size = b->sub_size - (i * b->sub_size / k);
     else
       sub_size = b->sub_size / k;
+    //printf("[%d]: round %d enqueueing %d\n", rp.gid(), rp.round(), sub_size);
     rp.enqueue(rp.out_link().target(i), &b->data[sub_start], sub_size);
   }
+
+  // update sub_start and sub_size inside the block
+  b->sub_start = b->sub_start + (mypos * b->sub_size / k);
+  if (mypos == k - 1)
+      b->sub_size = b->sub_size - ((k-1) * b->sub_size / k);
+  else
+      b->sub_size = b->sub_size/k;
 }
 //
 // comparison function for searching vector of (gid, pos) pairs
