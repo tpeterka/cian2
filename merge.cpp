@@ -57,7 +57,8 @@ struct Block
     { diy::load(bb, *static_cast<Block*>(b)); }
   void generate_data(size_t n, int tot_b)
   {
-    data.resize(n);
+    contents.resize(n*sizeof(float));
+    float* data = (float*) &contents[0];
     for (size_t i = 0; i < n / 4; ++i)
     {
       data[4 * i    ] = gid * n / 4 + i;
@@ -67,7 +68,7 @@ struct Block
     }
   }
 
-  vector<float> data;
+  std::vector<char> contents;
   int gid;
 };
 //
@@ -111,10 +112,12 @@ void PrintBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* args)
 {
   Block* b   = static_cast<Block*>(b_);
   int tot_b = *(int*)args;
+  float* data = (float*) &b->contents[0];
+  size_t size = b->contents.size() / sizeof(float);
   if (b->gid == 0)
   {
-    for (int i = 0; i < b->data.size(); i++)
-      fprintf(stderr, "diy reduced data[%d] = %.1f\n", i, b->data[i]);
+    for (int i = 0; i < size; i++)
+      fprintf(stderr, "diy reduced data[%d] = %.1f\n", i, data[i]);
   }
 }
 //
@@ -209,7 +212,7 @@ int main(int argc, char **argv)
       DiyMerge(merge_time, run, target_k, comm, dim, tot_blocks, true, master, assigner, op);
 
       // debug
-//       master.foreach(PrintBlock, &tot_blocks);
+      //master.foreach(PrintBlock, &tot_blocks);
 
       num_elems *= 2; // double the number of elements every time
       run++;
@@ -273,10 +276,10 @@ void MpiReduce(double *reduce_time, int run, float *in_data, MPI_Comm comm, int 
   reduce_time[run] = MPI_Wtime() - t0;
 
   // debug: print the reduced data
-//   if (rank == 0) {
-//     for (int i = 0; i < num_elems; i++)
-//       fprintf(stderr, "mpi reduced data[%d] = %.1f\n", i, reduce_data[i]);
-//   }
+  //if (rank == 0) {
+  //  for (int i = 0; i < num_elems; i++)
+  //    fprintf(stderr, "mpi reduced data[%d] = %.1f\n", i, reduce_data[i]);
+  //}
 
   // cleanup
   delete[] reduce_data;
@@ -360,43 +363,39 @@ void PrintResults(double *reduce_time, double *merge_time, int min_procs,
 //
 void ComputeMerge(void* b_, const diy::ReduceProxy& rp, const diy::RegularMergePartners&)
 {
+  /* In-place manipulation of queues */
+
   Block* b = static_cast<Block*>(b_);
+
+  float* data = (float*) &b->contents[0];
+  size_t size = b->contents.size() / sizeof(float);
 
   // dequeue and reduce
   for (unsigned i = 0; i < rp.in_link().size(); ++i)
   {
     if (rp.in_link().target(i).gid == rp.gid())
-        continue;
-    std::vector< float > in;
-    rp.dequeue(rp.in_link().target(i).gid, in);
-//     fprintf(stderr, "[%d:%d] Received %d values from [%d]\n",
-//             rp.gid(), rp.round(), (int)in_vals[i].size(), rp.in_link().target(i).gid);
-    for (int j = 0; j < b->data.size() / 4; j++)
     {
-//       fprintf(stderr, "b = (%.1f %.1f %.1f %.1f)  i = (%.1f %.1f %.1f %.1f)\n",
-//               b->data[j * 4], b->data[j * 4 + 1], b->data[j * 4 + 2], b->data[j * 4 + 3],
-//               in[j * 4], in[j * 4 + 1], in[j * 4 + 2], in[j * 4 + 3]);
+        assert(i == 0);
+        continue;
+    }
 
-      b->data[j * 4    ] =
-        (1.0f - in[j * 4 + 3]) * b->data[j * 4    ] + in[j * 4    ];
-      b->data[j * 4 + 1] =
-        (1.0f - in[j * 4 + 3]) * b->data[j * 4 + 1] + in[j * 4 + 1];
-      b->data[j * 4 + 2] =
-        (1.0f - in[j * 4 + 3]) * b->data[j * 4 + 2] + in[j * 4 + 2];
-      b->data[j * 4 + 3] =
-        (1.0f - in[j * 4 + 3]) * b->data[j * 4 + 3] + in[j * 4 + 3];
-
-//       fprintf(stderr, "b+ = (%.1f %.1f %.1f %.1f)\n",
-//               b->data[j * 4], b->data[j * 4 + 1], b->data[j * 4 + 2], b->data[j * 4 + 3]);
+    float* in = (float*) &rp.incoming(rp.in_link().target(i).gid).buffer[0];
+    
+    for (int j = 0; j < size / 4; j++)
+    {
+      data[j * 4    ] = (1.0f - in[j * 4 + 3]) * data[j * 4    ] + in[j * 4    ];
+      data[j * 4 + 1] = (1.0f - in[j * 4 + 3]) * data[j * 4 + 1] + in[j * 4 + 1];
+      data[j * 4 + 2] = (1.0f - in[j * 4 + 3]) * data[j * 4 + 2] + in[j * 4 + 2];
+      data[j * 4 + 3] = (1.0f - in[j * 4 + 3]) * data[j * 4 + 3] + in[j * 4 + 3];
     }
   }
-
+  
   // enqueue
-  if (rp.out_link().size())
+  if (rp.out_link().size() && rp.out_link().target(0).gid != rp.gid())
   {
-    rp.enqueue(rp.out_link().target(0), b->data);
-//     fprintf(stderr, "[%d:%d] Sent %lu values to [%d]\n",
-//             rp.gid(), rp.round(), b->data.size(), rp.out_link().target(0).gid);
+    diy::BinaryBuffer& out = rp.outgoing(rp.out_link().target(0));
+    out.buffer.swap(b->contents);
+    out.position = out.buffer.size();
   }
 }
 //
@@ -407,19 +406,28 @@ void NoopMerge(void* b_, const diy::ReduceProxy& rp, const diy::RegularMergePart
   Block*    b        = static_cast<Block*>(b_);
 
   // dequeue all incoming neighbors
+  std::vector<char> in;
   for (unsigned i = 0; i < rp.in_link().size(); ++i)
   {
     if (rp.in_link().target(i).gid == rp.gid())
         continue;
-    std::vector< float > in;
-    rp.dequeue(rp.in_link().target(i).gid, in);
+    //std::vector<float> in;
+    //rp.dequeue(rp.in_link().target(i).gid, in);
+    rp.incoming(rp.in_link().target(i).gid).buffer.swap(in);
+    float* in_float = (float*) &in[0];
   }
 
   // enqueue
   if (rp.out_link().size())
   {
     //printf("[%d]: round %d enqueueing %d\n", rp.gid(), rp.round(), b->data.size());
-    rp.enqueue(rp.out_link().target(0), b->data);
+    if (rp.out_link().target(0).gid != rp.gid())
+    {
+        diy::BinaryBuffer& out = rp.outgoing(rp.out_link().target(0));
+        out.buffer.swap(b->contents);
+        // we must set the position correctly because information is appended to the buffer before it's sent off
+        out.position = out.buffer.size();
+    }
   }
 }
 //
@@ -496,6 +504,6 @@ void GetArgs(int argc, char **argv, int &min_procs,
   assert(min_elems >= 4 *nb * max_procs); // at least one element per block
 
   if (rank == 0)
-    fprintf(stderr, "min_procs = %d min_elems = %d max_elems = %d nb = %d "
-	    "target_k = %d\n", min_procs, min_elems, max_elems, nb, target_k);
+    fprintf(stderr, "min_procs = %d min_elems = %d max_elems = %d nb = %d op = %d "
+	    "target_k = %d\n", min_procs, min_elems, max_elems, nb, op, target_k);
 }
