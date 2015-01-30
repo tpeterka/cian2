@@ -381,10 +381,11 @@ void ComputeMerge(void* b_, const diy::ReduceProxy& rp, const diy::RegularMergeP
     
     for (int j = 0; j < size / 4; j++)
     {
-      data[j * 4    ] = (1.0f - in[j * 4 + 3]) * data[j * 4    ] + in[j * 4    ];
-      data[j * 4 + 1] = (1.0f - in[j * 4 + 3]) * data[j * 4 + 1] + in[j * 4 + 1];
-      data[j * 4 + 2] = (1.0f - in[j * 4 + 3]) * data[j * 4 + 2] + in[j * 4 + 2];
-      data[j * 4 + 3] = (1.0f - in[j * 4 + 3]) * data[j * 4 + 3] + in[j * 4 + 3];
+      // NB: the order on the right-hand side is correct to match what MPI is doing
+      data[j * 4    ] = (1.0f - data[j * 4 + 3]) * in[j * 4    ] + data[j * 4    ];
+      data[j * 4 + 1] = (1.0f - data[j * 4 + 3]) * in[j * 4 + 1] + data[j * 4 + 1];
+      data[j * 4 + 2] = (1.0f - data[j * 4 + 3]) * in[j * 4 + 2] + data[j * 4 + 2];
+      data[j * 4 + 3] = (1.0f - data[j * 4 + 3]) * in[j * 4 + 3] + data[j * 4 + 3];
     }
   }
   
