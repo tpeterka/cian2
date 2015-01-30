@@ -76,8 +76,8 @@ struct Block
 //
 struct AddBlock
 {
-  AddBlock(diy::Master& master_, size_t num_elems_, int tot_blocks_):
-    master(master_), num_elems(num_elems_), tot_blocks(tot_blocks_) {}
+  AddBlock(diy::Master& master_):
+    master(master_) {}
 
   void operator()(int gid, const Bounds& core, const Bounds& bounds, const Bounds& domain,
                    const RCLink& link) const
@@ -90,8 +90,6 @@ struct AddBlock
   }
 
   diy::Master&  master;
-  size_t num_elems;
-  int tot_blocks;
 };
 //
 // reset the size and data values in a block
@@ -191,7 +189,7 @@ int main(int argc, char **argv)
                                      &Block::save,
                                      &Block::load);
     diy::ContiguousAssigner   assigner(world.size(), tot_blocks);
-    AddBlock                  create(master, min_elems, tot_blocks);
+    AddBlock                  create(master);
     diy::decompose(dim, world.rank(), domain, assigner, create);
 
     // iterate over number of elements
