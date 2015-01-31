@@ -57,6 +57,7 @@ struct Block
     { diy::load(bb, *static_cast<Block*>(b)); }
   void generate_data(size_t n, int tot_b)
   {
+    contents.reserve(n*sizeof(float) + 4*sizeof(int));
     contents.resize(n*sizeof(float));
     float* data = (float*) &contents[0];
     for (size_t i = 0; i < n / 4; ++i)
