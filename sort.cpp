@@ -15,6 +15,7 @@
 #include <vector>
 #include <algorithm>
 #include <assert.h>
+#include <limits>
 
 #include <diy/master.hpp>
 #include <diy/reduce.hpp>
