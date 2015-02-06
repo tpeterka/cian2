@@ -53,15 +53,18 @@ include_directories         (${DIY_INCLUDE_DIRS}
 add_executable              (neighbor neighbor.cpp)
 add_executable              (merge    merge.cpp)
 add_executable              (swap     swap.cpp)
+add_executable              (sort     sort.cpp pssort.c pmsort.c util.c)
 
 if                          (NOT bgq)
     target_link_libraries   (neighbor                   ${mpi_libraries})
     target_link_libraries   (merge                      ${mpi_libraries})
     target_link_libraries   (swap                       ${mpi_libraries})
+    target_link_libraries   (sort                       ${mpi_libraries})
 endif                       (NOT bgq)
 
 if                          (threads)
     target_link_libraries   (neighbor                   ${CMAKE_THREAD_LIBS_INIT})
     target_link_libraries   (merge                      ${CMAKE_THREAD_LIBS_INIT})
     target_link_libraries   (swap                       ${CMAKE_THREAD_LIBS_INIT})
+    target_link_libraries   (sort                       ${CMAKE_THREAD_LIBS_INIT})
 endif                       (threads)
