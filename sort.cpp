@@ -14,6 +14,7 @@
 #include <math.h>
 #include <vector>
 #include <algorithm>
+#include <limits>
 #include <assert.h>
 
 #include <diy/master.hpp>
