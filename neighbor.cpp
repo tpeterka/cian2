@@ -25,7 +25,6 @@
 #include <assert.h>
 
 #include <diy/mpi.hpp>
-#include <diy/communicator.hpp>
 #include <diy/master.hpp>
 #include <diy/assigner.hpp>
 #include <diy/serialization.hpp>
@@ -160,8 +159,7 @@ int main(int argc, char **argv)
     int num_threads = 1; // because of timing
     diy::mpi::communicator    world(mpi_comm);
     diy::FileStorage          storage("./DIY.XXXXXX");
-    diy::Communicator         diy_comm(world);
-    diy::Master               master(diy_comm,
+    diy::Master               master(world,
                                      &create_block,
                                      &destroy_block,
                                      mem_blocks,
