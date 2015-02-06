@@ -442,6 +442,10 @@ void PrintResults(double *ssort_time, double *dsort_time, int min_procs,
   int elem_iter = 0;                                            // element iteration number
   int num_elem_iters = (int)(log2(max_elems / min_elems) + 1);  // number of element iterations
   int proc_iter = 0;                                            // process iteration number
+  int proc_x, elem_x;                                           // factors for procs and elems
+
+  proc_x = 4;
+  elem_x = 4;
 
   fprintf(stderr, "----- Timing Results -----\n");
 
@@ -461,11 +465,11 @@ void PrintResults(double *ssort_time, double *dsort_time, int min_procs,
       fprintf(stderr, "%d \t\t %.3lf \t\t %.3lf\n",
 	      groupsize, ssort_time[i], dsort_time[i]);
 
-      groupsize *= 2; // double the number of processes every time
+      groupsize *= proc_x;
       proc_iter++;
     } // proc iteration
 
-    num_elems *= 2; // double the number of elements every time
+    num_elems *= elem_x;
     elem_iter++;
   } // elem iteration
 
@@ -512,6 +516,10 @@ int main(int argc, char **argv)
   int min_procs;            // minimum number of processes
   int max_procs;            // maximum number of processes (groupsize of MPI_COMM_WORLD)
   int hbins;                // number of histogram bins
+  int proc_x, elem_x;       // factors for procs and elems
+
+  proc_x = 4;
+  elem_x = 4;
 
   MPI_Init(&argc, &argv);
   MPI_Comm_size(MPI_COMM_WORLD, &max_procs);
@@ -536,7 +544,7 @@ int main(int argc, char **argv)
     if (rank >= groupsize)
     {
       MPI_Comm_free(&comm);
-      groupsize *= 2;
+      groupsize *= proc_x;
       continue;
     }
 
@@ -579,12 +587,12 @@ int main(int argc, char **argv)
       // debug
 //       master.foreach(VerifyBlock);
 
-      num_elems *= 2; // double the number of elements every time
+      num_elems *= elem_x;
       run++;
 
     } // elem iteration
 
-    groupsize *= 2; // double the number of processes every time
+    groupsize *= proc_x;
     MPI_Comm_free(&comm);
 
   } // proc iteration
