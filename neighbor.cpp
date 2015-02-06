@@ -173,7 +173,7 @@ int main(int argc, char **argv)
 
     // decompose
     std::vector<int> my_gids;
-    assigner.local_gids(diy_comm.rank(), my_gids);
+    assigner.local_gids(rank, my_gids);
     nblocks = my_gids.size();
     diy::decompose(dim, rank, domain, assigner, create);
 
