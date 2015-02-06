@@ -57,6 +57,9 @@ struct Block
     { diy::load(bb, *static_cast<Block*>(b)); }
   void generate_data(size_t n, int tot_b)
   {
+    //contents.reserve(n*sizeof(float) + 4*sizeof(int));
+    //contents.resize(n*sizeof(float));
+    //float* data = (float*) &contents[0];
     data.resize(n);
     for (size_t i = 0; i < n / 4; ++i)
     {
@@ -67,7 +70,8 @@ struct Block
     }
   }
 
-  vector<float> data;
+  //std::vector<char> contents;
+  std::vector<float> data;
   int gid;
   int sub_start; // starting index of subset of the total data that this block owns
   int sub_size;  // number of elements in the subset of the total data that this block owns
@@ -77,8 +81,8 @@ struct Block
 //
 struct AddBlock
 {
-  AddBlock(diy::Master& master_, size_t num_elems_, int tot_blocks_):
-    master(master_), num_elems(num_elems_), tot_blocks(tot_blocks_) {}
+  AddBlock(diy::Master& master_):
+    master(master_)     {}
 
   void operator()(int gid, const Bounds& core, const Bounds& bounds, const Bounds& domain,
                    const RCLink& link) const
@@ -91,8 +95,6 @@ struct AddBlock
   }
 
   diy::Master&  master;
-  size_t num_elems;
-  int tot_blocks;
 };
 //
 // reset the size and data values in a block
@@ -188,7 +190,7 @@ int main(int argc, char **argv)
                                      &Block::save,
                                      &Block::load);
     diy::ContiguousAssigner   assigner(world.size(), tot_blocks);
-    AddBlock                  create(master, min_elems, tot_blocks);
+    AddBlock                  create(master);
     diy::decompose(dim, world.rank(), domain, assigner, create);
 
     // iterate over number of elements
@@ -207,7 +209,7 @@ int main(int argc, char **argv)
 
       master.foreach(ResetBlock, args);
 
-      DiySwap(swap_time, run, target_k, comm, dim, tot_blocks, false, master, assigner, op);
+      DiySwap(swap_time, run, target_k, comm, dim, tot_blocks, true, master, assigner, op);
 
       // debug
 //       master.foreach(PrintBlock, &tot_blocks);
@@ -367,8 +369,11 @@ void PrintResults(double *reduce_scatter_time, double *swap_time, int min_procs,
 void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPartners& partners)
 {
   Block* b = static_cast<Block*>(b_);
-  int sub_start = 0;                           // subset starting index
-  int sub_size = b->data.size();               // subset size
+
+  //float* data = (float*) &b->contents[0];
+  //size_t size = b->contents.size() / sizeof(float);
+
+  int sub_size;
 
   // find my position in the link
   int mypos;
@@ -390,8 +395,11 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
       sub_size = b->sub_size - (i * b->sub_size / k);
     else
       sub_size = b->sub_size / k;
-    std::vector< float > in(sub_size);
-    rp.dequeue(rp.in_link().target(i).gid, &in[0], sub_size);
+
+    float* in = (float*) &rp.incoming(rp.in_link().target(i).gid).buffer[0];
+    //std::vector< float > in(sub_size);
+    //rp.dequeue(rp.in_link().target(i).gid, &in[0], sub_size);
+    //
 //     fprintf(stderr, "[%d:%d] Received %d values from [%d]\n",
 //             rp.gid(), rp.round(), (int)in_vals[i].size(), rp.in_link().target(i).gid);
 
@@ -404,9 +412,9 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
 
     // NB: assumes that all items are same size, b->sub_size
     // TODO: figure out what to do when they are not, eg, when last item has extra values
+    int s = b->sub_start;
     for (int j = 0; j < b->sub_size / 4; j++)
     {
-      int s = b->sub_start;
       b->data[s + j * 4    ] =
         (1.0f - in[j * 4 + 3]) * b->data[s + j * 4    ] + in[j * 4    ];
       b->data[s + j * 4 + 1] =
@@ -427,7 +435,7 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
   {
     // temp versions of sub_start and sub_size are for sending
     // final versions stored in the block are updated upon receiving (above)
-    sub_start = b->sub_start + (i * b->sub_size / k);
+    int sub_start = b->sub_start + (i * b->sub_size / k);
     if (i == k - 1) // last subset may be different size
       sub_size = b->sub_size - (i * b->sub_size / k);
     else
@@ -466,8 +474,9 @@ void NoopSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPartne
       sub_size = b->sub_size - (i * b->sub_size / k);
     else
       sub_size = b->sub_size / k;
-    std::vector< float > in(sub_size);
-    rp.dequeue(rp.in_link().target(i).gid, &in[0], sub_size);
+    float* in = (float*) &rp.incoming(rp.in_link().target(i).gid).buffer[0];
+    //std::vector< float > in(sub_size);
+    //rp.dequeue(rp.in_link().target(i).gid, &in[0], sub_size);
   }
 
   if (!rp.out_link().size())
