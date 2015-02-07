@@ -526,11 +526,15 @@ int main(int argc, char **argv)
 
   GetArgs(argc, argv, min_procs, min_elems, max_elems, nblocks, target_k, hbins);
 
-  int num_runs = (int)((log2(max_procs / min_procs) + 1) * (log2(max_elems / min_elems) + 1));
-
   // timing
-  double ssort_time[num_runs]; // sample sort from diy1
-  double dsort_time[num_runs]; // sort from diy2
+  int num_runs = 0;
+  for (int i = min_procs; i <= max_procs; i *= proc_x)
+  {
+    for (int j = min_elems; j <= max_elems; j *= elem_x)
+      num_runs++;
+  }
+  double *ssort_time = new double[num_runs]; // sample sort from diy1
+  double *dsort_time = new double[num_runs]; // sort from diy2
 
   // iterate over processes
   int run = 0; // run number
@@ -603,6 +607,8 @@ int main(int argc, char **argv)
                  elem_x);
 
   // cleanup
+  delete[] ssort_time;
+  delete[] dsort_time;
   MPI_Finalize();
   return 0;
 }
