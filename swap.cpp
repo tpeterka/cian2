@@ -497,6 +497,9 @@ void NoopSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPartne
   }
 
   // update sub_start and sub_size inside the block
+  if (rp.in_link().size() == 0)
+      return;
+
   b->sub_start = b->sub_start + (mypos * b->sub_size / k);
   if (mypos == k - 1)
       b->sub_size = b->sub_size - ((k-1) * b->sub_size / k);
