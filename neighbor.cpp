@@ -307,7 +307,7 @@ void PrintResults(double *enqueue_time, double *exchange_time, int min_procs, in
 
     fprintf(stderr, "\n# %d items * %d bytes / item = %d KB\n",
 	    num_items, item_size, num_items * item_size / 1024);
-    fprintf(stderr, "# procs \t enqueue_time (s) \t exchange_time (s)\n");
+    fprintf(stderr, "# procs \t time (s) \t enqueue_time (s) \t exchange_time (s)\n");
 
     // iterate over processes
     int groupsize = min_procs;
@@ -315,8 +315,9 @@ void PrintResults(double *enqueue_time, double *exchange_time, int min_procs, in
     while (groupsize <= max_procs) {
 
       int i = proc_iter * num_item_iters + item_iter; // index into times
-      fprintf(stderr, "%d \t\t %.3lf \t\t\t %.3lf\n",
-	      groupsize, enqueue_time[i], exchange_time[i]);
+      fprintf(stderr, "%d \t\t %.3lf \t\t %.3lf \t\t\t %.3lf\n",
+	      groupsize, enqueue_time[i] + exchange_time[i],
+              enqueue_time[i], exchange_time[i]);
 
       groupsize *= proc_factor;
       proc_iter++;
