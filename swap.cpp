@@ -221,10 +221,10 @@ int main(int argc, char **argv)
     diy::mpi::communicator    world(comm);
     diy::FileStorage          storage("./DIY.XXXXXX");
     diy::Master               master(world,
+                                     num_threads,
+                                     mem_blocks,
                                      &Block::create,
                                      &Block::destroy,
-                                     mem_blocks,
-                                     num_threads,
                                      &storage,
                                      &Block::save,
                                      &Block::load);
@@ -339,6 +339,49 @@ void MpiReduceScatter(float* reduce_scatter_data, double *reduce_scatter_time, i
   // cleanup
   MPI_Op_free(&op_fun);
 }
+
+// assumes 2^k blocks
+struct FinalSwapPartners
+{
+        FinalSwapPartners(int nblocks): nblocks_(nblocks), rounds_(0)
+    {
+        while (nblocks >>= 1) ++rounds_;
+        if (rounds_ == 1)
+            rounds_ = 0;    // nothing to do for 2 blocks
+    }
+
+    int    rounds() const                       { return rounds_; }
+    bool   active(int round, int gid) const     { return reverse(gid) != gid; }
+
+    void   incoming(int round, int gid, std::vector<int>& partners) const    { partners.push_back(reverse(gid)); }
+    void   outgoing(int round, int gid, std::vector<int>& partners) const    { partners.push_back(reverse(gid)); }
+
+    // reverse the bit pattern of gid
+    int     reverse(int gid) const              { int res = 0; for (int i = 0; i < rounds(); ++i) { res <<= 1; if (gid & (1 << i)) res |= 1; } return res; }
+    
+    int nblocks_;
+    int rounds_;
+};
+
+void FinalSwapExchange(void* b_, const diy::ReduceProxy& proxy, const FinalSwapPartners& partners)
+{
+  Block* b = static_cast<Block*>(b_);
+  
+  if (proxy.round() == 0)
+  {
+    const diy::BlockID dest = proxy.out_link().target(0);
+    proxy.enqueue(dest, b->sub_start);
+    proxy.enqueue(dest, b->sub_size);
+    proxy.enqueue(dest, &b->data[b->sub_start], b->sub_size);
+  } else
+  {
+    int from = proxy.in_link().target(0).gid;
+    proxy.dequeue(from, b->sub_start);
+    proxy.dequeue(from, b->sub_size);
+    proxy.dequeue(from, &b->data[b->sub_start], b->sub_size);
+  }
+}
+
 //
 // DIY swap
 //
@@ -364,6 +407,13 @@ void DiySwap(double *swap_time, int run, int k, MPI_Comm comm, int dim, int totb
     diy::reduce(master, assigner, partners, ComputeSwap);
   else
     diy::reduce(master, assigner, partners, NoopSwap);
+
+  if (contiguous)
+  {
+    FinalSwapPartners final_swap_partners(totblocks);
+    if (final_swap_partners.rounds() > 0)
+        diy::reduce(master, assigner, final_swap_partners, FinalSwapExchange);
+  }
 
   //printf("------------\n");
   MPI_Barrier(comm);

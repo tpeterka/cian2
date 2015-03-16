@@ -181,10 +181,10 @@ int main(int argc, char **argv)
     diy::mpi::communicator    world(comm);
     diy::FileStorage          storage("./DIY.XXXXXX");
     diy::Master               master(world,
+                                     num_threads,
+                                     mem_blocks,
                                      &Block::create,
                                      &Block::destroy,
-                                     mem_blocks,
-                                     num_threads,
                                      &storage,
                                      &Block::save,
                                      &Block::load);
