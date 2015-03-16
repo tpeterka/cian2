@@ -32,7 +32,8 @@ typedef  diy::RegularContinuousLink  RCLink;
 // function prototypes
 void GetArgs(int argc, char **argv, int &min_procs, int &min_elems,
 	     int &max_elems, int &nb, int &target_k, bool &op);
-void MpiReduceScatter(double *reduce_scatter_time, int run, float *in_data, MPI_Comm comm,
+void MpiReduceScatter(float* reduce_scatter_data, double *reduce_scatter_time, int run,
+                      float *in_data, MPI_Comm comm,
                       int num_elems, bool op);
 void DiySwap(double *swap_time, int run, int k, MPI_Comm comm, int dim, int totblocks,
              bool contiguous, diy::Master& master, diy::ContiguousAssigner& assigner, bool op);
@@ -66,7 +67,13 @@ struct Block
       data[4 * i    ] = gid * n / 4 + i;
       data[4 * i + 1] = gid * n / 4 + i;
       data[4 * i + 2] = gid * n / 4 + i;
-      data[4 * i + 3] = gid / (tot_b - 1);
+      data[4 * i + 3] = (float)gid / (tot_b - 1);
+      // debug
+//       fprintf(stderr, "diy2 gid %d indata[4 * %d] = (%.1f, %.1f, %.1f %.1f)\n", gid, i,
+//               data[4 * i    ],
+//               data[4 * i + 1],
+//               data[4 * i + 2],
+//               data[4 * i + 3]);
     }
   }
 
@@ -116,8 +123,40 @@ void ResetBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* args)
 void PrintBlock(void* b_, const diy::Master::ProxyWithLink& cp, void*)
 {
   Block* b   = static_cast<Block*>(b_);
-  for (int i = b->sub_start; i < b->sub_start + b->sub_size; i++)
-    fprintf(stderr, "diy reduced data[%d] = %.1f\n", i, b->data[i]);
+  fprintf(stderr, "sub_start = %d sub_size = %d\n", b->sub_start, b->sub_size);
+  for (int i = 0; i < b->sub_size / 4; i++)
+    fprintf(stderr, "diy2 gid %d reduced data[4 * %d] = (%.1f, %.1f, %.1f %.1f)\n", b->gid, i,
+            b->data[b->sub_start + 4 * i    ],
+            b->data[b->sub_start + 4 * i + 1],
+            b->data[b->sub_start + 4 * i + 2],
+            b->data[b->sub_start + 4 * i + 3]);
+}
+//
+// checks diy2 block data against mpi reduce-scatter data
+//
+void CheckBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* rs_)
+{
+  Block* b   = static_cast<Block*>(b_);
+  float* rs = static_cast<float*>(rs_);
+  for (int i = 0; i < b->sub_size / 4; i++)
+  {
+    if (b->data[b->sub_start + 4 * i    ] != rs[4 * i    ] ||
+        b->data[b->sub_start + 4 * i + 1] != rs[4 * i + 1] ||
+        b->data[b->sub_start + 4 * i + 2] != rs[4 * i + 2] ||
+        b->data[b->sub_start + 4 * i + 3] != rs[4 * i + 3])
+      fprintf(stderr, "i = %d gid = %d sub_start = %d sub_size = %d: "
+              "diy2 does not match mpi reduced data: "
+              "(%.1f, %.1f, %.1f %.1f) != (%.1f, %.1f, %.1f %.1f)\n",
+              i, b->gid, b->sub_start, b->sub_size,
+              b->data[b->sub_start + 4 * i    ],
+              b->data[b->sub_start + 4 * i + 1],
+              b->data[b->sub_start + 4 * i + 2],
+              b->data[b->sub_start + 4 * i + 3],
+              rs[4 * i    ],
+              rs[4 * i + 1],
+              rs[4 * i + 2],
+              rs[4 * i + 3]);
+  }
 }
 //
 // main
@@ -157,6 +196,7 @@ int main(int argc, char **argv)
 
   // data for MPI reduce, only for one local block
   float *in_data = new float[max_elems];
+  float *reduce_scatter_data = new float[max_elems];
 
   // iterate over processes
   int run = 0; // run number
@@ -198,7 +238,8 @@ int main(int argc, char **argv)
     {
       // MPI reduce-scatter, only for one block per process
       if (tot_blocks == groupsize)
-	MpiReduceScatter(reduce_scatter_time, run, in_data, comm, num_elems, op);
+	MpiReduceScatter(reduce_scatter_data, reduce_scatter_time, run, in_data, comm,
+                         num_elems, op);
 
       // DIY swap
       // initialize input data
@@ -208,10 +249,11 @@ int main(int argc, char **argv)
 
       master.foreach(ResetBlock, args);
 
-      DiySwap(swap_time, run, target_k, comm, dim, tot_blocks, true, master, assigner, op);
+      DiySwap(swap_time, run, target_k, comm, dim, tot_blocks, false, master, assigner, op);
 
       // debug
-//       master.foreach(PrintBlock, &tot_blocks);
+//       master.foreach(PrintBlock);
+      master.foreach(CheckBlock, reduce_scatter_data);
 
       num_elems *= 2; // double the number of elements every time
       run++;
@@ -231,6 +273,7 @@ int main(int argc, char **argv)
 
   // cleanup
   delete[] in_data;
+  delete[] reduce_scatter_data;
   MPI_Finalize();
 
   return 0;
@@ -238,6 +281,7 @@ int main(int argc, char **argv)
 //
 // MPI reduce scatter
 //
+// reduce_scatter_data: data values
 // reduce_scatter_time: time (output)
 // run: run number
 // in_data: input data
@@ -245,8 +289,8 @@ int main(int argc, char **argv)
 // num_elems: current number of elements
 // op: run actual op or noop
 //
-void MpiReduceScatter(double *reduce_scatter_time, int run, float *in_data, MPI_Comm comm,
-                      int num_elems, bool op)
+void MpiReduceScatter(float* reduce_scatter_data, double *reduce_scatter_time, int run,
+                      float *in_data, MPI_Comm comm, int num_elems, bool op)
 {
   // init
   MPI_Op op_fun;                       // custom operator
@@ -254,7 +298,6 @@ void MpiReduceScatter(double *reduce_scatter_time, int run, float *in_data, MPI_
     MPI_Op_create(&Over, 1, &op_fun);  // commutative
   else
     MPI_Op_create(&Noop, 1, &op_fun);  // commutative, even if it doesn't do anything
-  float *reduce_scatter_data = new float[num_elems];
   int rank;
   int groupsize;
   MPI_Comm_rank(comm, &rank);
@@ -269,7 +312,13 @@ void MpiReduceScatter(double *reduce_scatter_time, int run, float *in_data, MPI_
     in_data[4 * i    ] = rank * num_elems / 4 + i;
     in_data[4 * i + 1] = rank * num_elems / 4 + i;
     in_data[4 * i + 2] = rank * num_elems / 4 + i;
-    in_data[4 * i + 3] = rank / (groupsize - 1);
+    in_data[4 * i + 3] = (float)rank / (groupsize - 1);
+    // debug
+//     fprintf(stderr, "mpi rank %d indata[4 * %d] = (%.1f, %.1f, %.1f %.1f)\n", rank, i,
+//             in_data[4 * i    ],
+//             in_data[4 * i + 1],
+//             in_data[4 * i + 2],
+//             in_data[4 * i + 3]);
   }
 
   // reduce
@@ -280,11 +329,14 @@ void MpiReduceScatter(double *reduce_scatter_time, int run, float *in_data, MPI_
   reduce_scatter_time[run] = MPI_Wtime() - t0;
 
   // debug: print the reduce-scattered data
-//   for (int i = 0; i < counts[rank]; i++)
-//     fprintf(stderr, "reduce_scatter_data[%d] = %.1f\n", i, reduce_scatter_data[i]);
+//   for (int i = 0; i < counts[rank] / 4; i++)
+//     fprintf(stderr, "mpi rank %d reduced data[4 * %d] = (%.1f, %.1f, %.1f %.1f)\n", rank, i,
+//             reduce_scatter_data[4 * i    ],
+//             reduce_scatter_data[4 * i + 1],
+//             reduce_scatter_data[4 * i + 2],
+//             reduce_scatter_data[4 * i + 3]);
 
   // cleanup
-  delete[] reduce_scatter_data;
   MPI_Op_free(&op_fun);
 }
 //
@@ -402,7 +454,7 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
 //     fprintf(stderr, "[%d:%d] Received %d values from [%d]\n",
 //             rp.gid(), rp.round(), (int)in_vals[i].size(), rp.in_link().target(i).gid);
 
-    // compute my subset indices for the result of the merge
+    // compute my subset indices for the result of the swap
     b->sub_start += (mypos * b->sub_size / k);
     if (mypos == k - 1) // last subset may be different size
       b->sub_size = b->sub_size - (mypos * b->sub_size / k);
@@ -476,6 +528,13 @@ void NoopSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPartne
     float* in = (float*) &rp.incoming(rp.in_link().target(i).gid).buffer[0];
     //std::vector< float > in(sub_size);
     //rp.dequeue(rp.in_link().target(i).gid, &in[0], sub_size);
+
+    // compute my subset indices for the result of the swap
+    b->sub_start += (mypos * b->sub_size / k);
+    if (mypos == k - 1) // last subset may be different size
+      b->sub_size = b->sub_size - (mypos * b->sub_size / k);
+    else
+      b->sub_size = b->sub_size / k;
   }
 
   if (!rp.out_link().size())
