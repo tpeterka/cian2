@@ -138,6 +138,7 @@ void CheckBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* rs_)
 {
   Block* b   = static_cast<Block*>(b_);
   float* rs = static_cast<float*>(rs_);
+
   for (int i = 0; i < b->sub_size / 4; i++)
   {
     if (b->data[b->sub_start + 4 * i    ] != rs[4 * i    ] ||
@@ -249,7 +250,7 @@ int main(int argc, char **argv)
 
       master.foreach(ResetBlock, args);
 
-      DiySwap(swap_time, run, target_k, comm, dim, tot_blocks, false, master, assigner, op);
+      DiySwap(swap_time, run, target_k, comm, dim, tot_blocks, true, master, assigner, op);
 
       // debug
 //       master.foreach(PrintBlock);
@@ -295,9 +296,9 @@ void MpiReduceScatter(float* reduce_scatter_data, double *reduce_scatter_time, i
   // init
   MPI_Op op_fun;                       // custom operator
   if (op)
-    MPI_Op_create(&Over, 1, &op_fun);  // commutative
+    MPI_Op_create(&Over, 0, &op_fun);  // commutative
   else
-    MPI_Op_create(&Noop, 1, &op_fun);  // commutative, even if it doesn't do anything
+    MPI_Op_create(&Noop, 0, &op_fun);  // commutative, even if it doesn't do anything
   int rank;
   int groupsize;
   MPI_Comm_rank(comm, &rank);
@@ -516,14 +517,10 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
     int s = b->sub_start;
     for (int j = 0; j < b->sub_size / 4; j++)
     {
-      b->data[s + j * 4    ] =
-        (1.0f - in[j * 4 + 3]) * b->data[s + j * 4    ] + in[j * 4    ];
-      b->data[s + j * 4 + 1] =
-        (1.0f - in[j * 4 + 3]) * b->data[s + j * 4 + 1] + in[j * 4 + 1];
-      b->data[s + j * 4 + 2] =
-        (1.0f - in[j * 4 + 3]) * b->data[s + j * 4 + 2] + in[j * 4 + 2];
-      b->data[s + j * 4 + 3] =
-        (1.0f - in[j * 4 + 3]) * b->data[s + j * 4 + 3] + in[j * 4 + 3];
+      b->data[s + j * 4    ] = (1.0f - b->data[j * 4 + 3]) * in[j * 4    ] + b->data[s + j * 4    ];
+      b->data[s + j * 4 + 1] = (1.0f - b->data[j * 4 + 3]) * in[j * 4 + 1] + b->data[s + j * 4 + 1];
+      b->data[s + j * 4 + 2] = (1.0f - b->data[j * 4 + 3]) * in[j * 4 + 2] + b->data[s + j * 4 + 2];
+      b->data[s + j * 4 + 3] = (1.0f - b->data[j * 4 + 3]) * in[j * 4 + 3] + b->data[s + j * 4 + 3];
     }
   }
 
@@ -631,21 +628,10 @@ void Over(void *in, void *inout, int *len, MPI_Datatype *type)
 {
   for (int i = 0; i < *len / 4; i++)
   {
-    ((float *)inout)[i * 4] =
-      (1.0f - ((float *)in)[i * 4 + 3]) * ((float *)inout)[i * 4] +
-      ((float *)in)[i * 4];
-
-    ((float *)inout)[i * 4 + 1] =
-      (1.0f - ((float *)in)[i * 4 + 3]) * ((float *)inout)[i * 4 + 1] +
-      ((float *)in)[i * 4 + 1];
-
-    ((float *)inout)[i * 4 + 2] =
-      (1.0f - ((float *)in)[i * 4 + 3]) * ((float *)inout)[i * 4 + 2] +
-      ((float *)in)[i * 4 + 2];
-
-    ((float *)inout)[i * 4 + 3] =
-      (1.0f - ((float *)in)[i * 4 + 3]) * ((float *)inout)[i * 4 + 3] +
-      ((float *)in)[i * 4 + 3];
+    ((float *)inout)[i * 4]     = (1.0f - ((float *)in)[i * 4 + 3]) * ((float *)inout)[i * 4]     + ((float *)in)[i * 4];
+    ((float *)inout)[i * 4 + 1] = (1.0f - ((float *)in)[i * 4 + 3]) * ((float *)inout)[i * 4 + 1] + ((float *)in)[i * 4 + 1];
+    ((float *)inout)[i * 4 + 2] = (1.0f - ((float *)in)[i * 4 + 3]) * ((float *)inout)[i * 4 + 2] + ((float *)in)[i * 4 + 2];
+    ((float *)inout)[i * 4 + 3] = (1.0f - ((float *)in)[i * 4 + 3]) * ((float *)inout)[i * 4 + 3] + ((float *)in)[i * 4 + 3];
   }
 }
 //
