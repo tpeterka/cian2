@@ -56,8 +56,10 @@ struct Block
     { diy::save(bb, *static_cast<const Block*>(b)); }
   static void     load(void* b, diy::BinaryBuffer& bb)
     { diy::load(bb, *static_cast<Block*>(b)); }
-  void generate_data(size_t n, int tot_b)
+  void generate_data(size_t n_, int tot_b_)
   {
+    n = n_;
+    tot_b = tot_b_;
     //contents.reserve(n*sizeof(float) + 4*sizeof(int));
     //contents.resize(n*sizeof(float));
     //float* data = (float*) &contents[0];
@@ -82,6 +84,8 @@ struct Block
   int gid;
   int sub_start; // starting index of subset of the total data that this block owns
   int sub_size;  // number of elements in the subset of the total data that this block owns
+  size_t n;
+  int    tot_b;
 };
 //
 // add blocks to a master
@@ -138,6 +142,9 @@ void CheckBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* rs_)
 {
   Block* b   = static_cast<Block*>(b_);
   float* rs = static_cast<float*>(rs_);
+
+  if (b->sub_size != b->n / b->tot_b)
+      fprintf(stderr, "Warning: wrong number of elements in %d: %d\n", b->gid, b->sub_size);
 
   for (int i = 0; i < b->sub_size / 4; i++)
   {
@@ -351,17 +358,17 @@ struct FinalSwapPartners
             rounds_ = 0;    // nothing to do for 2 blocks
     }
 
-    int    rounds() const                       { return rounds_; }
+    int    rounds() const                       { return 1; }
     bool   active(int round, int gid) const     { return reverse(gid) != gid; }
 
     void   incoming(int round, int gid, std::vector<int>& partners) const    { partners.push_back(reverse(gid)); }
     void   outgoing(int round, int gid, std::vector<int>& partners) const    { partners.push_back(reverse(gid)); }
 
     // reverse the bit pattern of gid
-    int     reverse(int gid) const              { int res = 0; for (int i = 0; i < rounds(); ++i) { res <<= 1; if (gid & (1 << i)) res |= 1; } return res; }
+    int     reverse(int gid) const              { int res = 0; for (int i = 0; i < rounds_; ++i) { res <<= 1; if (gid & (1 << i)) res |= 1; } return res; }
     
     int nblocks_;
-    int rounds_;
+    int rounds_;            // rounds of the full swap
 };
 
 void FinalSwapExchange(void* b_, const diy::ReduceProxy& proxy, const FinalSwapPartners& partners)
@@ -492,18 +499,18 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
     if (rp.in_link().target(i).gid == rp.gid())
       continue;
 
-    // allocate receive buffer to correct subsize and then dequeue
-    if (i == k - 1) // last subset may be different size
-      sub_size = b->sub_size - (i * b->sub_size / k);
-    else
-      sub_size = b->sub_size / k;
-
     float* in = (float*) &rp.incoming(rp.in_link().target(i).gid).buffer[0];
+
+    // allocate receive buffer to correct subsize and then dequeue
+    //if (i == k - 1) // last subset may be different size
+    //  sub_size = b->sub_size - (i * b->sub_size / k);
+    //else
+    //  sub_size = b->sub_size / k;
     //std::vector< float > in(sub_size);
     //rp.dequeue(rp.in_link().target(i).gid, &in[0], sub_size);
     //
-//     fprintf(stderr, "[%d:%d] Received %d values from [%d]\n",
-//             rp.gid(), rp.round(), (int)in_vals[i].size(), rp.in_link().target(i).gid);
+    //fprintf(stderr, "[%d:%d] Received %d values from [%d]\n",
+    //        rp.gid(), rp.round(), (int)in_vals[i].size(), rp.in_link().target(i).gid);
 
     // compute my subset indices for the result of the swap
     b->sub_start += (mypos * b->sub_size / k);
@@ -514,13 +521,26 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
 
     // NB: assumes that all items are same size, b->sub_size
     // TODO: figure out what to do when they are not, eg, when last item has extra values
+    // NB: assumes k = 2
     int s = b->sub_start;
-    for (int j = 0; j < b->sub_size / 4; j++)
+    if (i == 1)
     {
-      b->data[s + j * 4    ] = (1.0f - b->data[j * 4 + 3]) * in[j * 4    ] + b->data[s + j * 4    ];
-      b->data[s + j * 4 + 1] = (1.0f - b->data[j * 4 + 3]) * in[j * 4 + 1] + b->data[s + j * 4 + 1];
-      b->data[s + j * 4 + 2] = (1.0f - b->data[j * 4 + 3]) * in[j * 4 + 2] + b->data[s + j * 4 + 2];
-      b->data[s + j * 4 + 3] = (1.0f - b->data[j * 4 + 3]) * in[j * 4 + 3] + b->data[s + j * 4 + 3];
+      for (int j = 0; j < b->sub_size / 4; j++)
+      {
+        b->data[s + j * 4    ] = (1.0f - b->data[s + j * 4 + 3]) * in[j * 4    ] + b->data[s + j * 4    ];
+        b->data[s + j * 4 + 1] = (1.0f - b->data[s + j * 4 + 3]) * in[j * 4 + 1] + b->data[s + j * 4 + 1];
+        b->data[s + j * 4 + 2] = (1.0f - b->data[s + j * 4 + 3]) * in[j * 4 + 2] + b->data[s + j * 4 + 2];
+        b->data[s + j * 4 + 3] = (1.0f - b->data[s + j * 4 + 3]) * in[j * 4 + 3] + b->data[s + j * 4 + 3];
+      }
+    } else  // i = 0
+    {
+      for (int j = 0; j < b->sub_size / 4; j++)
+      {
+        b->data[s + j * 4    ] = (1.0f - in[j * 4 + 3]) * b->data[s + j * 4    ] + in[j * 4    ];
+        b->data[s + j * 4 + 1] = (1.0f - in[j * 4 + 3]) * b->data[s + j * 4 + 1] + in[j * 4 + 1];
+        b->data[s + j * 4 + 2] = (1.0f - in[j * 4 + 3]) * b->data[s + j * 4 + 2] + in[j * 4 + 2];
+        b->data[s + j * 4 + 3] = (1.0f - in[j * 4 + 3]) * b->data[s + j * 4 + 3] + in[j * 4 + 3];
+      }
     }
   }
 
@@ -531,6 +551,9 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
   k = rp.out_link().size();
   for (unsigned i = 0; i < k; i++)
   {
+    if (rp.out_link().target(i).gid == rp.gid())
+        continue;
+
     // temp versions of sub_start and sub_size are for sending
     // final versions stored in the block are updated upon receiving (above)
     int sub_start = b->sub_start + (i * b->sub_size / k);
@@ -667,6 +690,9 @@ void GetArgs(int argc, char **argv, int &min_procs,
       fprintf(stderr, "Usage: %s min_procs min_elems max_elems nb target_k op\n", argv[0]);
     exit(1);
   }
+
+  if (target_k != 2)
+      fprintf(stderr, "Warning: the code assumes k=2, but k=%d requested\n", target_k);
 
   // check there is at least four elements (eg., one pixel) per block
   assert(min_elems >= 4 *nb * max_procs); // at least one element per block
