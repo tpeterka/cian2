@@ -142,6 +142,8 @@ void CheckBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* rs_)
   Block* b   = static_cast<Block*>(b_);
   float* rs = static_cast<float*>(rs_);
 
+  float max = 0;
+
   if (b->sub_size != b->n / b->tot_b)
       fprintf(stderr, "Warning: wrong number of elements in %d: %d\n", b->gid, b->sub_size);
 
@@ -151,6 +153,7 @@ void CheckBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* rs_)
         b->data[b->sub_start + 4 * i + 1] != rs[4 * i + 1] ||
         b->data[b->sub_start + 4 * i + 2] != rs[4 * i + 2] ||
         b->data[b->sub_start + 4 * i + 3] != rs[4 * i + 3])
+#if 0
       fprintf(stderr, "i = %d gid = %d sub_start = %d sub_size = %d elem = %lu blocks = %d: "
               "diy2 does not match mpi reduced data: "
               "(%.1f, %.1f, %.1f %.1f) != (%.1f, %.1f, %.1f %.1f)\n",
@@ -163,6 +166,25 @@ void CheckBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* rs_)
               rs[4 * i + 1],
               rs[4 * i + 2],
               rs[4 * i + 3]);
+#endif
+    {
+        float diff;
+        diff = fabs(b->data[b->sub_start + 4 * i    ] - rs[4 * i    ]);
+        if (diff > max) max = diff;
+        diff = fabs(b->data[b->sub_start + 4 * i + 1] - rs[4 * i + 1]);
+        if (diff > max) max = diff;
+        diff = fabs(b->data[b->sub_start + 4 * i + 2] - rs[4 * i + 2]);
+        if (diff > max) max = diff;
+        diff = fabs(b->data[b->sub_start + 4 * i + 3] - rs[4 * i + 3]);
+        if (diff > max) max = diff;
+    }
+  }
+
+  if (max > 0)
+  {
+      fprintf(stderr, "gid = %d sub_start = %d sub_size = %d elem = %lu blocks = %d: max difference: %f\n",
+              b->gid, b->sub_start, b->sub_size, b->n, b->tot_b,
+              max);
   }
 }
 //
@@ -350,25 +372,38 @@ void MpiReduceScatter(float* reduce_scatter_data, double *reduce_scatter_time, i
 // assumes 2^k blocks
 struct FinalSwapPartners
 {
-        FinalSwapPartners(int nblocks): nblocks_(nblocks), rounds_(0)
-    {
-        while (nblocks >>= 1) ++rounds_;
-        if (rounds_ == 1)
-            rounds_ = 0;    // nothing to do for 2 blocks
-    }
+        FinalSwapPartners(int nblocks, const diy::RegularSwapPartners& swap_partners):
+            nblocks_(nblocks), swap_partners_(swap_partners)
+    {}
 
     int    rounds() const                       { return 1; }
-    bool   active(int round, int gid) const     { return reverse(gid) != gid; }
+    bool   active(int round, int gid) const     { return partner(gid) != gid; }
 
-    void   incoming(int round, int gid, std::vector<int>& partners) const    { partners.push_back(reverse(gid)); }
-    void   outgoing(int round, int gid, std::vector<int>& partners) const    { partners.push_back(reverse(gid)); }
+    void   incoming(int round, int gid, std::vector<int>& partners) const    { partners.push_back(partner(gid)); }
+    void   outgoing(int round, int gid, std::vector<int>& partners) const    { partners.push_back(partner(gid)); }
 
     // reverse the bit pattern of gid
-    int     reverse(int gid) const              { int res = 0; for (int i = 0; i < rounds_; ++i) { res <<= 1; if (gid & (1 << i)) res |= 1; } return res; }
+    inline int  partner(int gid) const;
     
     int nblocks_;
-    int rounds_;            // rounds of the full swap
+    const diy::RegularSwapPartners& swap_partners_;
 };
+ 
+
+int
+FinalSwapPartners::
+partner(int gid) const
+{
+    int res = 0;
+    for (unsigned i = 0; i < swap_partners_.rounds(); ++i)
+    {
+        int k = swap_partners_.kvs()[i].size;
+        res *= k;
+        res += gid % k;
+        gid /= k;
+    }
+    return res;
+}
 
 void FinalSwapExchange(void* b_, const diy::ReduceProxy& proxy, const FinalSwapPartners& partners)
 {
@@ -417,7 +452,7 @@ void DiySwap(double *swap_time, int run, int k, MPI_Comm comm, int dim, int totb
 
   if (contiguous)
   {
-    FinalSwapPartners final_swap_partners(totblocks);
+    FinalSwapPartners final_swap_partners(totblocks, partners);
     if (final_swap_partners.rounds() > 0)
         diy::reduce(master, assigner, final_swap_partners, FinalSwapExchange);
   }
@@ -502,10 +537,10 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
     // dequeue and reduce
     // NB: assumes that all items are same size, b->sub_size
     // TODO: figure out what to do when they are not, eg, when last item has extra values
+    int s = b->sub_start;
     for (int i = mypos-1; i >= 0; --i)
     {
       float* in = (float*) &rp.incoming(rp.in_link().target(i).gid).buffer[0];
-      int s = b->sub_start;
  
       for (int j = 0; j < b->sub_size / 4; j++)
       {
@@ -527,7 +562,7 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
         xo = xa * aa + xb * ab * (1 - aa);
         yo = ya * aa + yb * ab * (1 - aa);
         zo = za * aa + zb * ab * (1 - aa);
-        ao = aa + ab * (1 - aa);
+        ao =      aa +      ab * (1 - aa);
         
         xo /= ao;
         yo /= ao;
@@ -538,7 +573,6 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
     for (int i = mypos+1; i < k; ++i)
     {
       float* in = (float*) &rp.incoming(rp.in_link().target(i).gid).buffer[0];
-      int s = b->sub_start;
  
       for (int j = 0; j < b->sub_size / 4; j++)
       {
@@ -560,7 +594,7 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
         xo = xa * aa + xb * ab * (1 - aa);
         yo = ya * aa + yb * ab * (1 - aa);
         zo = za * aa + zb * ab * (1 - aa);
-        ao = aa + ab * (1 - aa);
+        ao =      aa +      ab * (1 - aa);
         
         xo /= ao;
         yo /= ao;
@@ -690,7 +724,7 @@ void Over(void *in_, void *inout_, int *len, MPI_Datatype *type)
     xo = xa * aa + xb * ab * (1 - aa);
     yo = ya * aa + yb * ab * (1 - aa);
     zo = za * aa + zb * ab * (1 - aa);
-    ao = aa + ab * (1 - aa);
+    ao =      aa +      ab * (1 - aa);
     
     xo /= ao;
     yo /= ao;
