@@ -44,7 +44,6 @@ void NoopSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPartne
 void Over(void *in, void *inout, int *len, MPI_Datatype*);
 void Noop(void*, void*, int*, MPI_Datatype*) {}
 void ResetBlock(void* b_, const diy::Master::ProxyWithLink& cp, void*);
-bool compare(pair<int, int> u, pair<int, int> t);
 
 // block
 struct Block
@@ -152,10 +151,10 @@ void CheckBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* rs_)
         b->data[b->sub_start + 4 * i + 1] != rs[4 * i + 1] ||
         b->data[b->sub_start + 4 * i + 2] != rs[4 * i + 2] ||
         b->data[b->sub_start + 4 * i + 3] != rs[4 * i + 3])
-      fprintf(stderr, "i = %d gid = %d sub_start = %d sub_size = %d: "
+      fprintf(stderr, "i = %d gid = %d sub_start = %d sub_size = %d elem = %lu blocks = %d: "
               "diy2 does not match mpi reduced data: "
               "(%.1f, %.1f, %.1f %.1f) != (%.1f, %.1f, %.1f %.1f)\n",
-              i, b->gid, b->sub_start, b->sub_size,
+              i, b->gid, b->sub_start, b->sub_size, b->n, b->tot_b,
               b->data[b->sub_start + 4 * i    ],
               b->data[b->sub_start + 4 * i + 1],
               b->data[b->sub_start + 4 * i + 2],
@@ -481,37 +480,18 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
 
   //float* data = (float*) &b->contents[0];
   //size_t size = b->contents.size() / sizeof(float);
+  //int sub_size;
 
-  int sub_size;
+  int k = rp.in_link().size();
 
   // find my position in the link
   int mypos;
-  for (unsigned i = 0; i < rp.in_link().size(); ++i)
+  if (k > 0)
   {
-    if (rp.in_link().target(i).gid == rp.gid())
-      mypos = i;
-  }
-
-  // dequeue and reduce
-  int k = rp.in_link().size();
-  for (unsigned i = 0; i < k; ++i)
-  {
-    if (rp.in_link().target(i).gid == rp.gid())
-      continue;
-
-    float* in = (float*) &rp.incoming(rp.in_link().target(i).gid).buffer[0];
-
-    // allocate receive buffer to correct subsize and then dequeue
-    //if (i == k - 1) // last subset may be different size
-    //  sub_size = b->sub_size - (i * b->sub_size / k);
-    //else
-    //  sub_size = b->sub_size / k;
-    //std::vector< float > in(sub_size);
-    //rp.dequeue(rp.in_link().target(i).gid, &in[0], sub_size);
-    //
-    //fprintf(stderr, "[%d:%d] Received %d values from [%d]\n",
-    //        rp.gid(), rp.round(), (int)in_vals[i].size(), rp.in_link().target(i).gid);
-
+    for (unsigned i = 0; i < k; ++i)
+      if (rp.in_link().target(i).gid == rp.gid())
+        mypos = i;
+ 
     // compute my subset indices for the result of the swap
     b->sub_start += (mypos * b->sub_size / k);
     if (mypos == k - 1) // last subset may be different size
@@ -519,27 +499,72 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
     else
       b->sub_size = b->sub_size / k;
 
+    // dequeue and reduce
     // NB: assumes that all items are same size, b->sub_size
     // TODO: figure out what to do when they are not, eg, when last item has extra values
-    // NB: assumes k = 2
-    int s = b->sub_start;
-    if (i == 1)
+    for (int i = mypos-1; i >= 0; --i)
     {
+      float* in = (float*) &rp.incoming(rp.in_link().target(i).gid).buffer[0];
+      int s = b->sub_start;
+ 
       for (int j = 0; j < b->sub_size / 4; j++)
       {
-        b->data[s + j * 4    ] = (1.0f - b->data[s + j * 4 + 3]) * in[j * 4    ] + b->data[s + j * 4    ];
-        b->data[s + j * 4 + 1] = (1.0f - b->data[s + j * 4 + 3]) * in[j * 4 + 1] + b->data[s + j * 4 + 1];
-        b->data[s + j * 4 + 2] = (1.0f - b->data[s + j * 4 + 3]) * in[j * 4 + 2] + b->data[s + j * 4 + 2];
-        b->data[s + j * 4 + 3] = (1.0f - b->data[s + j * 4 + 3]) * in[j * 4 + 3] + b->data[s + j * 4 + 3];
+        float& xa = in[j * 4    ];
+        float& ya = in[j * 4 + 1];
+        float& za = in[j * 4 + 2];
+        float& aa = in[j * 4 + 3];
+
+        float& xb = b->data[s + j * 4    ];
+        float& yb = b->data[s + j * 4 + 1];
+        float& zb = b->data[s + j * 4 + 2];
+        float& ab = b->data[s + j * 4 + 3];
+        
+        float& xo = xb;
+        float& yo = yb;
+        float& zo = zb;
+        float& ao = ab;
+
+        xo = xa * aa + xb * ab * (1 - aa);
+        yo = ya * aa + yb * ab * (1 - aa);
+        zo = za * aa + zb * ab * (1 - aa);
+        ao = aa + ab * (1 - aa);
+        
+        xo /= ao;
+        yo /= ao;
+        zo /= ao;
       }
-    } else  // i = 0
+    }
+    
+    for (int i = mypos+1; i < k; ++i)
     {
+      float* in = (float*) &rp.incoming(rp.in_link().target(i).gid).buffer[0];
+      int s = b->sub_start;
+ 
       for (int j = 0; j < b->sub_size / 4; j++)
       {
-        b->data[s + j * 4    ] = (1.0f - in[j * 4 + 3]) * b->data[s + j * 4    ] + in[j * 4    ];
-        b->data[s + j * 4 + 1] = (1.0f - in[j * 4 + 3]) * b->data[s + j * 4 + 1] + in[j * 4 + 1];
-        b->data[s + j * 4 + 2] = (1.0f - in[j * 4 + 3]) * b->data[s + j * 4 + 2] + in[j * 4 + 2];
-        b->data[s + j * 4 + 3] = (1.0f - in[j * 4 + 3]) * b->data[s + j * 4 + 3] + in[j * 4 + 3];
+        float& xa = b->data[s + j * 4    ];
+        float& ya = b->data[s + j * 4 + 1];
+        float& za = b->data[s + j * 4 + 2];
+        float& aa = b->data[s + j * 4 + 3];
+        
+        float& xb = in[j * 4    ];
+        float& yb = in[j * 4 + 1];
+        float& zb = in[j * 4 + 2];
+        float& ab = in[j * 4 + 3];
+
+        float& xo = xa;
+        float& yo = ya;
+        float& zo = za;
+        float& ao = aa;
+
+        xo = xa * aa + xb * ab * (1 - aa);
+        yo = ya * aa + yb * ab * (1 - aa);
+        zo = za * aa + zb * ab * (1 - aa);
+        ao = aa + ab * (1 - aa);
+        
+        xo /= ao;
+        yo /= ao;
+        zo /= ao;
       }
     }
   }
@@ -557,6 +582,7 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
     // temp versions of sub_start and sub_size are for sending
     // final versions stored in the block are updated upon receiving (above)
     int sub_start = b->sub_start + (i * b->sub_size / k);
+    int sub_size;
     if (i == k - 1) // last subset may be different size
       sub_size = b->sub_size - (i * b->sub_size / k);
     else
@@ -636,25 +662,39 @@ void NoopSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPartne
       b->sub_size = b->sub_size/k;
 }
 //
-// comparison function for searching vector of (gid, pos) pairs
-//
-bool compare(pair<int, int> u, pair <int, int> t)
-{
-  return(u.first < t.first);
-}
-//
 // performs in over inout
 // inout is the result
 // both in and inout have same size in pixels
 //
-void Over(void *in, void *inout, int *len, MPI_Datatype *type)
+void Over(void *in_, void *inout_, int *len, MPI_Datatype *type)
 {
+  float* in    = (float*) in_;
+  float* inout = (float*) inout_;
   for (int i = 0; i < *len / 4; i++)
   {
-    ((float *)inout)[i * 4]     = (1.0f - ((float *)in)[i * 4 + 3]) * ((float *)inout)[i * 4]     + ((float *)in)[i * 4];
-    ((float *)inout)[i * 4 + 1] = (1.0f - ((float *)in)[i * 4 + 3]) * ((float *)inout)[i * 4 + 1] + ((float *)in)[i * 4 + 1];
-    ((float *)inout)[i * 4 + 2] = (1.0f - ((float *)in)[i * 4 + 3]) * ((float *)inout)[i * 4 + 2] + ((float *)in)[i * 4 + 2];
-    ((float *)inout)[i * 4 + 3] = (1.0f - ((float *)in)[i * 4 + 3]) * ((float *)inout)[i * 4 + 3] + ((float *)in)[i * 4 + 3];
+    float& xa = in[i * 4    ];
+    float& ya = in[i * 4 + 1];
+    float& za = in[i * 4 + 2];
+    float& aa = in[i * 4 + 3];
+    
+    float& xb = inout[i * 4    ];
+    float& yb = inout[i * 4 + 1];
+    float& zb = inout[i * 4 + 2];
+    float& ab = inout[i * 4 + 3];
+
+    float& xo = xb;
+    float& yo = yb;
+    float& zo = zb;
+    float& ao = ab;
+
+    xo = xa * aa + xb * ab * (1 - aa);
+    yo = ya * aa + yb * ab * (1 - aa);
+    zo = za * aa + zb * ab * (1 - aa);
+    ao = aa + ab * (1 - aa);
+    
+    xo /= ao;
+    yo /= ao;
+    zo /= ao;
   }
 }
 //
