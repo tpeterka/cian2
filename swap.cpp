@@ -55,7 +55,7 @@ struct Block
     { diy::save(bb, *static_cast<const Block*>(b)); }
   static void     load(void* b, diy::BinaryBuffer& bb)
     { diy::load(bb, *static_cast<Block*>(b)); }
-  void generate_data(size_t n_, int tot_b_)
+  void generate_data(int n_, int tot_b_)
   {
     n = n_;
     tot_b = tot_b_;
@@ -63,7 +63,7 @@ struct Block
     //contents.resize(n*sizeof(float));
     //float* data = (float*) &contents[0];
     data.resize(n);
-    for (size_t i = 0; i < n / 4; ++i)
+    for (int i = 0; i < n / 4; ++i)
     {
       data[4 * i    ] = gid * n / 4 + i;
       data[4 * i + 1] = gid * n / 4 + i;
@@ -153,7 +153,7 @@ void CheckBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* rs_)
         b->data[b->sub_start + 4 * i + 1] != rs[4 * i + 1] ||
         b->data[b->sub_start + 4 * i + 2] != rs[4 * i + 2] ||
         b->data[b->sub_start + 4 * i + 3] != rs[4 * i + 3])
-#if 0
+#if 1
       fprintf(stderr, "i = %d gid = %d sub_start = %d sub_size = %d elem = %lu blocks = %d: "
               "diy2 does not match mpi reduced data: "
               "(%.1f, %.1f, %.1f %.1f) != (%.1f, %.1f, %.1f %.1f)\n",
@@ -166,7 +166,7 @@ void CheckBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* rs_)
               rs[4 * i + 1],
               rs[4 * i + 2],
               rs[4 * i + 3]);
-#endif
+#else
     {
         float diff;
         diff = fabs(b->data[b->sub_start + 4 * i    ] - rs[4 * i    ]);
@@ -178,6 +178,7 @@ void CheckBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* rs_)
         diff = fabs(b->data[b->sub_start + 4 * i + 3] - rs[4 * i + 3]);
         if (diff > max) max = diff;
     }
+#endif
   }
 
   if (max > 0)
@@ -377,13 +378,13 @@ struct FinalSwapPartners
     {}
 
     int    rounds() const                       { return 1; }
-    bool   active(int round, int gid) const     { return partner(gid) != gid; }
+    bool   active(int round, int gid) const     { return out_partner(gid) != gid; }
 
-    void   incoming(int round, int gid, std::vector<int>& partners) const    { partners.push_back(partner(gid)); }
-    void   outgoing(int round, int gid, std::vector<int>& partners) const    { partners.push_back(partner(gid)); }
+    void   incoming(int round, int gid, std::vector<int>& partners) const    { partners.push_back(in_partner(gid)); }
+    void   outgoing(int round, int gid, std::vector<int>& partners) const    { partners.push_back(out_partner(gid)); }
 
-    // reverse the bit pattern of gid
-    inline int  partner(int gid) const;
+    inline int  out_partner(int gid) const;
+    inline int  in_partner(int gid) const;
     
     int nblocks_;
     const diy::RegularSwapPartners& swap_partners_;
@@ -392,10 +393,25 @@ struct FinalSwapPartners
 
 int
 FinalSwapPartners::
-partner(int gid) const
+out_partner(int gid) const
 {
     int res = 0;
     for (unsigned i = 0; i < swap_partners_.rounds(); ++i)
+    {
+        int k = swap_partners_.kvs()[i].size;
+        res *= k;
+        res += gid % k;
+        gid /= k;
+    }
+    return res;
+}
+
+int
+FinalSwapPartners::
+in_partner(int gid) const
+{
+    int res = 0;
+    for (int i = swap_partners_.rounds() - 1; i >= 0; --i)
     {
         int k = swap_partners_.kvs()[i].size;
         res *= k;
@@ -412,12 +428,14 @@ void FinalSwapExchange(void* b_, const diy::ReduceProxy& proxy, const FinalSwapP
   if (proxy.round() == 0)
   {
     const diy::BlockID dest = proxy.out_link().target(0);
+    //printf("Sending: %d -> %d\n", b->gid, dest.gid);
     proxy.enqueue(dest, b->sub_start);
     proxy.enqueue(dest, b->sub_size);
     proxy.enqueue(dest, &b->data[b->sub_start], b->sub_size);
   } else
   {
     int from = proxy.in_link().target(0).gid;
+    //printf("Receiving: %d -> %d\n", from, b->gid);
     proxy.dequeue(from, b->sub_start);
     proxy.dequeue(from, b->sub_size);
     proxy.dequeue(from, &b->data[b->sub_start], b->sub_size);
@@ -540,6 +558,7 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
     int s = b->sub_start;
     for (int i = mypos-1; i >= 0; --i)
     {
+
       float* in = (float*) &rp.incoming(rp.in_link().target(i).gid).buffer[0];
  
       for (int j = 0; j < b->sub_size / 4; j++)
@@ -559,6 +578,7 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
         float& zo = zb;
         float& ao = ab;
 
+#if 0
         xo = xa * aa + xb * ab * (1 - aa);
         yo = ya * aa + yb * ab * (1 - aa);
         zo = za * aa + zb * ab * (1 - aa);
@@ -567,6 +587,12 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
         xo /= ao;
         yo /= ao;
         zo /= ao;
+#else
+        xo = xa + xb * (1 - aa);
+        yo = ya + yb * (1 - aa);
+        zo = za + zb * (1 - aa);
+        ao = aa + ab * (1 - aa);
+#endif
       }
     }
     
@@ -591,6 +617,7 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
         float& zo = za;
         float& ao = aa;
 
+#if 0
         xo = xa * aa + xb * ab * (1 - aa);
         yo = ya * aa + yb * ab * (1 - aa);
         zo = za * aa + zb * ab * (1 - aa);
@@ -599,6 +626,12 @@ void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPar
         xo /= ao;
         yo /= ao;
         zo /= ao;
+#else
+        xo = xa + xb * (1 - aa);
+        yo = ya + yb * (1 - aa);
+        zo = za + zb * (1 - aa);
+        ao = aa + ab * (1 - aa);
+#endif
       }
     }
   }
@@ -721,6 +754,7 @@ void Over(void *in_, void *inout_, int *len, MPI_Datatype *type)
     float& zo = zb;
     float& ao = ab;
 
+#if 0
     xo = xa * aa + xb * ab * (1 - aa);
     yo = ya * aa + yb * ab * (1 - aa);
     zo = za * aa + zb * ab * (1 - aa);
@@ -729,6 +763,12 @@ void Over(void *in_, void *inout_, int *len, MPI_Datatype *type)
     xo /= ao;
     yo /= ao;
     zo /= ao;
+#else
+    xo = xa + xb * (1 - aa);
+    yo = ya + yb * (1 - aa);
+    zo = za + zb * (1 - aa);
+    ao = aa + ab * (1 - aa);
+#endif
   }
 }
 //
@@ -765,8 +805,8 @@ void GetArgs(int argc, char **argv, int &min_procs,
     exit(1);
   }
 
-  if (target_k != 2)
-      fprintf(stderr, "Warning: the code assumes k=2, but k=%d requested\n", target_k);
+  //if (target_k != 2)
+  //    fprintf(stderr, "Warning: the code assumes k=2, but k=%d requested\n", target_k);
 
   // check there is at least four elements (eg., one pixel) per block
   assert(min_elems >= 4 *nb * max_procs); // at least one element per block
