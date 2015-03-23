@@ -31,6 +31,7 @@ using namespace std;
 
 typedef  diy::ContinuousBounds       Bounds;
 typedef  diy::RegularContinuousLink  RCLink;
+typedef  std::vector<size_t>         Histogram;
 
 // block
 struct Block
@@ -57,7 +58,6 @@ struct Block
   std::vector<int>      values;     // data values
   int                   gid;        // block gid
   int                   bins;       // number of bins in the histogram
-  std::vector<size_t>   histogram;  // histogram used to sort values into child blocks
 };
 
 // add blocks to a master
@@ -116,187 +116,163 @@ void VerifyBlock(void* b_, const diy::Master::ProxyWithLink& cp, void*)
 //   which are fixed at k=2)
 struct SortPartners
 {
-  // bool = are we in a swap (vs histogram) round
+  // bool = are we in an exchange (vs histogram) round
   // int  = round within that partner
   typedef       std::pair<bool, int>            RoundType;
 
-  SortPartners(int nblocks, int k):
-    histogram(1, nblocks, k),
-    swap(1, nblocks, k, false)
+                    SortPartners(int nblocks, int k):
+                        histogram(1, nblocks, k),
+                        exchange(1, nblocks, k, false)
+  {
+    for (unsigned i = 0; i < exchange.rounds(); ++i)
     {
-      for (unsigned i = 0; i < swap.rounds(); ++i)
-      {
-        // fill histogram rounds
-        for (unsigned j = 0; j < histogram.rounds(); ++j)
-        {
-          rounds_.push_back(std::make_pair(false, j));
-          if (j == histogram.rounds() / 2 - 1 - i)
-            j += 2*i;
-        }
+      // fill histogram rounds
+      for (unsigned j = 0; j < histogram.rounds() - i; ++j)
+        rounds_.push_back(std::make_pair(false, j));
 
-        // fill swap round
-        rounds_.push_back(std::make_pair(true, i));
-      }
+      // fill exchange round
+      rounds_.push_back(std::make_pair(true, i));
     }
+  }
 
   size_t        rounds() const                              { return rounds_.size(); }
-  bool          swap_round(int round) const                 { return rounds_[round].first; }
+  bool          exchange_round(int round) const             { return rounds_[round].first; }
   int           sub_round(int round) const                  { return rounds_[round].second; }
 
-  inline bool   active(int round, int gid) const
-    {
-      if (round == rounds())
-        return true;
-      else if (swap_round(round))
-        return swap.active(sub_round(round), gid);
-      else
-        return histogram.active(sub_round(round), gid);
-    }
+  inline bool   active(int round, int gid) const            { return true; }
 
   inline void   incoming(int round, int gid, std::vector<int>& partners) const
+  {
+    if (round == rounds())
+        exchange.incoming(sub_round(round-1) + 1, gid, partners);
+    else if (exchange_round(round))     // round != 0
+        histogram.incoming(sub_round(round-1) + 1, gid, partners);
+    else        // histogram round
     {
-      if (round == rounds())
-        swap.incoming(sub_round(round-1) + 1, gid, partners);
-      else if (swap_round(round))
-        histogram.incoming(histogram.rounds(), gid, partners);
-      else
-      {
         if (round > 0 && sub_round(round) == 0)
-          swap.incoming(sub_round(round - 1) + 1, gid, partners);
-        // jump through histogram rounds
-        else if (round > 0 && sub_round(round - 1) != sub_round(round) - 1)
-          histogram.incoming(sub_round(round - 1) + 1, gid, partners);
+            exchange.incoming(sub_round(round - 1) + 1, gid, partners);
         else
-          histogram.incoming(sub_round(round), gid, partners);
-      }
+            histogram.incoming(sub_round(round), gid, partners);
     }
+  }
 
   inline void   outgoing(int round, int gid, std::vector<int>& partners) const
-    {
-      if (round == rounds())
-        swap.outgoing(sub_round(round-1) + 1, gid, partners);
-      else if (swap_round(round))
-        swap.outgoing(sub_round(round), gid, partners);
-      else
+  {
+    if (exchange_round(round))
+        exchange.outgoing(sub_round(round), gid, partners);
+    else
         histogram.outgoing(sub_round(round), gid, partners);
-    }
+  }
 
-  diy::RegularAllReducePartners     histogram;
-  diy::RegularSwapPartners          swap;
+  diy::RegularSwapPartners          histogram;
+  diy::RegularSwapPartners          exchange;
 
   std::vector<RoundType>            rounds_;
 };
 
+
 // helper functions for the sort operator
 void compute_local_histogram(void* b_, const diy::ReduceProxy& srp)
 {
-  Block* b = static_cast<Block*>(b_);
+    Block* b = static_cast<Block*>(b_);
 
-  // compute and enqueue local histogram
-  b->histogram.clear();
-  b->histogram.resize(b->bins);
-  float width = ((float)b->max - (float)b->min) / b->bins;
-  for (size_t i = 0; i < b->values.size(); ++i)
-  {
-    int x = b->values[i];
-    int loc = ((float)x - b->min) / width;
-    if (loc >= b->bins)
-      loc = b->bins - 1;
-    ++(b->histogram[loc]);
-  }
-  if (srp.out_link().target(0).gid != srp.gid())
-    srp.enqueue(srp.out_link().target(0), b->histogram);
+    // compute and enqueue local histogram
+    Histogram histogram(b->bins);
+    float width = ((float)b->max - (float)b->min) / b->bins;
+    for (size_t i = 0; i < b->values.size(); ++i)
+    {
+        int x = b->values[i];
+        int loc = ((float)x - b->min) / width;
+        if (loc >= b->bins)
+            loc = b->bins - 1;
+        ++(histogram[loc]);
+    }
+    for (unsigned i = 0; i < srp.out_link().size(); ++i)
+        srp.enqueue(srp.out_link().target(i), histogram);
+}
+
+
+void receive_histogram(void* b_, const diy::ReduceProxy& srp, Histogram& histogram)
+{
+    Block* b = static_cast<Block*>(b_);
+
+    // dequeue and add up the histograms
+    for (unsigned i = 0; i < srp.in_link().size(); ++i)
+    {
+        int nbr_gid = srp.in_link().target(i).gid;
+
+        Histogram hist;
+        srp.dequeue(nbr_gid, hist);
+        if (histogram.size() < hist.size())
+            histogram.resize(hist.size());
+        for (size_t i = 0; i < hist.size(); ++i)
+            histogram[i] += hist[i];
+    }
 }
 
 void add_histogram(void* b_, const diy::ReduceProxy& srp)
 {
-  Block* b = static_cast<Block*>(b_);
+    Block* b = static_cast<Block*>(b_);
 
-  // dequeue and add up the histograms
-  for (unsigned i = 0; i < srp.in_link().size(); ++i)
-  {
-    int nbr_gid = srp.in_link().target(i).gid;
-    if (nbr_gid != srp.gid())
+    Histogram histogram;
+    receive_histogram(b_, srp, histogram);
+
+    for (unsigned i = 0; i < srp.out_link().size(); ++i)
+        srp.enqueue(srp.out_link().target(i), histogram);
+}
+
+void enqueue_exchange(void* b_, const diy::ReduceProxy& srp, const Histogram& histogram)
+{
+    Block*   b        = static_cast<Block*>(b_);
+
+    int k = srp.out_link().size();
+
+    // pick split points
+    size_t total = 0;
+    for (size_t i = 0; i < histogram.size(); ++i)
+        total += histogram[i];
+
+    std::vector<int>  splits;
+    splits.push_back(b->min);
+    size_t cur = 0;
+    float width = ((float)b->max - (float)b->min) / b->bins;
+    for (size_t i = 0; i < histogram.size(); ++i)
     {
-      std::vector<size_t> hist;
-      srp.dequeue(nbr_gid, hist);
-      for (size_t i = 0; i < hist.size(); ++i)
-        b->histogram[i] += hist[i];
+        if (cur + histogram[i] > total/k*splits.size())
+            splits.push_back(b->min + width*i + width/2);   // mid-point of the bin
+
+        cur += histogram[i];
+
+        if (splits.size() == k)
+            break;
     }
-  }
-  if (srp.out_link().target(0).gid != srp.gid())
-    srp.enqueue(srp.out_link().target(0), b->histogram);
-}
 
-void receive_histogram(void* b_, const diy::ReduceProxy& srp)
-{
-  Block* b = static_cast<Block*>(b_);
+    // subset and enqueue
+    if (srp.out_link().size() == 0)        // final round; nothing needs to be sent
+        return;
 
-  if (srp.in_link().target(0).gid != srp.gid())
-    srp.dequeue(srp.in_link().target(0).gid, b->histogram);
-}
-
-void forward_histogram(void* b_, const diy::ReduceProxy& srp)
-{
-  Block* b = static_cast<Block*>(b_);
-
-  for (unsigned i = 0; i < srp.out_link().size(); ++i)
-    if (srp.out_link().target(i).gid != srp.gid())
-      srp.enqueue(srp.out_link().target(i), b->histogram);
-}
-
-void enqueue_exchange(void* b_, const diy::ReduceProxy& srp)
-{
-  Block* b = static_cast<Block*>(b_);
-
-  int k = srp.out_link().size();
-
-  // pick split points
-  size_t total = 0;
-  for (size_t i = 0; i < b->histogram.size(); ++i)
-    total += b->histogram[i];
-
-  std::vector<int> splits;
-  splits.push_back(b->min);
-  size_t cur = 0;
-  float width = ((float)b->max - (float)b->min) / b->bins;
-  for (size_t i = 0; i < b->histogram.size(); ++i)
-  {
-    if (cur + b->histogram[i] > total / k * splits.size())
-      splits.push_back(b->min + width * i + width / 2);   // mid-point of the bin
-
-    cur += b->histogram[i];
-
-    if (splits.size() == k)
-      break;
-  }
-
-  // subset and enqueue
-  if (srp.out_link().size() == 0)        // final round; nothing needs to be sent
-    return;
-
-  std::vector< std::vector<int> > out_values(srp.out_link().size());
-  for (size_t i = 0; i < b->values.size(); ++i)
-  {
-    int loc = std::upper_bound(splits.begin(), splits.end(), b->values[i]) - splits.begin() - 1;
-    out_values[loc].push_back(b->values[i]);
-  }
-  int pos = -1;
-  for (int i = 0; i < k; ++i)
-  {
-    if (srp.out_link().target(i).gid == srp.gid())
+    std::vector< std::vector<int> > out_values(srp.out_link().size());
+    for (size_t i = 0; i < b->values.size(); ++i)
     {
-      b->values.swap(out_values[i]);
-      pos = i;
+      int loc = std::upper_bound(splits.begin(), splits.end(), b->values[i]) - splits.begin() - 1;
+      out_values[loc].push_back(b->values[i]);
     }
-    else
-      srp.enqueue(srp.out_link().target(i), out_values[i]);
-  }
-  splits.push_back(b->max);
-  int new_min = splits[pos];
-  int new_max = splits[pos+1];
-  b->min = new_min;
-  b->max = new_max;
+    int pos = -1;
+    for (int i = 0; i < k; ++i)
+    {
+      if (srp.out_link().target(i).gid == srp.gid())
+      {
+        b->values.swap(out_values[i]);
+        pos = i;
+      }
+      else
+        srp.enqueue(srp.out_link().target(i), out_values[i]);
+    }
+    splits.push_back(b->max);
+    int new_min = splits[pos];
+    int new_max = splits[pos+1];
+    b->min = new_min;
+    b->max = new_max;
 }
 
 void dequeue_exchange(void* b_, const diy::ReduceProxy& srp)
@@ -331,29 +307,26 @@ void sort_local(void* b_, const diy::ReduceProxy&)
 
 void sort_all(void* b_, const diy::ReduceProxy& srp, const SortPartners& partners)
 {
-  if (srp.round() == partners.rounds())
-  {
-    dequeue_exchange(b_, srp);
-    sort_local(b_, srp);
-  }
-  else if (partners.swap_round(srp.round()))
-  {
-    receive_histogram(b_, srp);
-    enqueue_exchange(b_, srp);
-  } else if (partners.sub_round(srp.round()) == 0)
-  {
-    if (srp.round() > 0)
-      dequeue_exchange(b_, srp);
+    if (srp.round() == partners.rounds())
+    {
+        dequeue_exchange(b_, srp);
+        sort_local(b_, srp);
+    }
+    else if (partners.exchange_round(srp.round()))
+    {
+        Histogram histogram;
+        receive_histogram(b_, srp, histogram);
+        enqueue_exchange(b_, srp, histogram);
+    } else if (partners.sub_round(srp.round()) == 0)
+    {
+        if (srp.round() > 0)
+            dequeue_exchange(b_, srp);
 
-    compute_local_histogram(b_, srp);
-  } else if (partners.sub_round(srp.round()) < partners.histogram.rounds()/2)
-    add_histogram(b_, srp);
-  else
-  {
-    receive_histogram(b_, srp);
-    forward_histogram(b_, srp);
-  }
+        compute_local_histogram(b_, srp);
+    } else
+        add_histogram(b_, srp);
 }
+
 
 // DIY2 sort
 //
@@ -368,7 +341,6 @@ void Diy2Sort(double *time, int run, int k, MPI_Comm comm, int totblocks,
 {
   MPI_Barrier(comm);
   double t0 = MPI_Wtime();
-
 
   SortPartners partners(totblocks, k);
   diy::reduce(master, assigner, partners, sort_all);
@@ -588,7 +560,7 @@ int main(int argc, char **argv)
       Diy2Sort(dsort_time, run, target_k, comm, tot_blocks, master, assigner);
 
       // debug
-//       master.foreach(VerifyBlock);
+      //master.foreach(VerifyBlock);
 
       num_elems *= elem_x;
       run++;
