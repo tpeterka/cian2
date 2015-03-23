@@ -555,7 +555,7 @@ int main(int argc, char **argv)
       // DIY2 sort
       int args[2];
       args[0] = num_elems;
-      args[1] = target_k * hbins;
+      args[1] = target_k * hbins * groupsize;
       master.foreach(ResetBlock, args);
       Diy2Sort(dsort_time, run, target_k, comm, tot_blocks, master, assigner);
 
