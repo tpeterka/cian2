@@ -392,7 +392,7 @@ void ComputeMerge(void* b_, const diy::ReduceProxy& rp, const diy::RegularMergeP
   // enqueue
   if (rp.out_link().size() && rp.out_link().target(0).gid != rp.gid())
   {
-    diy::BinaryBuffer& out = rp.outgoing(rp.out_link().target(0));
+    diy::Master::BBVector& out = rp.outgoing(rp.out_link().target(0));
     out.buffer.swap(b->contents);
     out.position = out.buffer.size();
   }
@@ -422,7 +422,7 @@ void NoopMerge(void* b_, const diy::ReduceProxy& rp, const diy::RegularMergePart
     //printf("[%d]: round %d enqueueing %d\n", rp.gid(), rp.round(), b->data.size());
     if (rp.out_link().target(0).gid != rp.gid())
     {
-        diy::BinaryBuffer& out = rp.outgoing(rp.out_link().target(0));
+        diy::Master::BBVector& out = rp.outgoing(rp.out_link().target(0));
         out.buffer.swap(b->contents);
         // we must set the position correctly because information is appended to the buffer before it's sent off
         out.position = out.buffer.size();
