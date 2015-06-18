@@ -1,10 +1,3 @@
-//
-// tests to run:
-//
-// ranks per node
-// different overall message sizes
-// wraparound neighbors
-//
 //---------------------------------------------------------------------------
 //
 // testing DIY's neighborhood exchange performance
@@ -30,7 +23,7 @@
 #include <diy/serialization.hpp>
 #include <diy/decomposition.hpp>
 
-#include "opts.h"
+#include "../include/opts.h"
 
 using namespace std;
 

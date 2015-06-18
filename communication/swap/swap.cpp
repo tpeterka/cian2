@@ -1,3 +1,4 @@
+//--------------------------------------------------------------------------
 //
 // testing DIY's reduction performance and comparing to MPI
 //
@@ -22,7 +23,7 @@
 #include <diy/decomposition.hpp>
 #include <diy/assigner.hpp>
 
-#include "opts.h"
+#include "../include/opts.h"
 
 using namespace std;
 

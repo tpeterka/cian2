@@ -1,3 +1,4 @@
+//--------------------------------------------------------------------------
 //
 // testing DIY2's sort performance and comparing to DIY1
 //
@@ -24,8 +25,7 @@
 #include <diy/partners/swap.hpp>
 #include <diy/assigner.hpp>
 
-#include "opts.h"
-#include "psort.h"
+#include "../include/opts.h"
 
 using namespace std;
 
@@ -327,7 +327,6 @@ void sort_all(void* b_, const diy::ReduceProxy& srp, const SortPartners& partner
         add_histogram(b_, srp);
 }
 
-
 // DIY2 sort
 //
 // time: time (output)
@@ -349,67 +348,12 @@ void Diy2Sort(double *time, int run, int k, MPI_Comm comm, int totblocks,
   time[run] = MPI_Wtime() - t0;
 }
 
-// DIY1 sort
-int compare_int(const void* a, const void* b)
-{
-  if (*(int*)a < *(int*)b)
-    return -1;
-  else if (*(int*)a > *(int*)b)
-    return 1;
-  else
-    return 0;
-}
-void Diy1Sort(double *time, int run, MPI_Comm comm, int num_elems)
-{
-  // init in_data
-  // using malloc/free instead of new/delete because Diy1Sort is implemented in C
-  int *in_data = (int*)malloc(num_elems * sizeof(int));
-  std::numeric_limits<int> lims;
-  int min = lims.min();
-  int max = lims.max();
-  int rank;
-  MPI_Comm_rank(comm, &rank);
-  srand(rank);
-  for (size_t i = 0; i < num_elems; ++i)
-    in_data[i] = rand();
-
-  // sort
-  MPI_Barrier(comm);
-  double t0 = MPI_Wtime();
-
-  // parallel sample sort
-  pssort((void**)&in_data, &num_elems, sizeof(int), compare_int, comm);
-
-  // parallel merge sort
-//   pmsort((void**)&in_data, &num_elems, sizeof(int), compare_int, comm);
-
-  MPI_Barrier(comm);
-  time[run] = MPI_Wtime() - t0;
-
-  // verify
-//   for (size_t i = 0; i < num_elems; ++i)
-//   {
-//     if (i == 0 || in_data[i] < min)
-//       min = in_data[i];
-//     if (i == 0 || in_data[i] > max)
-//       max = in_data[i];
-//     if (i > 0 && in_data[i] < in_data[i - 1])
-//       fprintf(stderr, "Warning: diy1 sort: rank %d is not sorted\n", rank);
-// //     fprintf(stderr, "diy1: rank %d sorted data[%lu] = %d\n", rank, i, in_data[i]);
-//   }
-//   fprintf(stderr, "diy1 sort: rank %d num_elems %d (min, max) = (%d %d)\n",
-//           rank, num_elems, min, max);
-
-  // cleanup
-  free(in_data);
-}
-
 // print results
 //
-// ssort_time, dsort_time: times
+// dsort_time: times
 // min_procs, max_procs, proc_x: process range
 // min_elems, max_elems, elem_x: data range
-void PrintResults(double *ssort_time, double *dsort_time, int min_procs,
+void PrintResults(double *dsort_time, int min_procs,
 		  int max_procs, int proc_x, int min_elems, int max_elems, int elem_x)
 {
   int elem_iter = 0;                                            // element iteration number
@@ -434,8 +378,7 @@ void PrintResults(double *ssort_time, double *dsort_time, int min_procs,
     while (groupsize <= max_procs)
     {
       int i = proc_iter * num_elem_iters + elem_iter; // index into times
-      fprintf(stderr, "%d \t\t %.3lf \t\t %.3lf\n",
-	      groupsize, ssort_time[i], dsort_time[i]);
+      fprintf(stderr, "%d \t\t %.3lf\n", groupsize, dsort_time[i]);
 
       groupsize *= proc_x;
       proc_iter++;
@@ -505,7 +448,7 @@ int main(int argc, char **argv)
     for (int j = min_elems; j <= max_elems; j *= elem_x)
       num_runs++;
   }
-  double *ssort_time = new double[num_runs]; // sample sort from diy1
+
   double *dsort_time = new double[num_runs]; // sort from diy2
 
   // iterate over processes
@@ -548,11 +491,6 @@ int main(int argc, char **argv)
     num_elems = min_elems;
     while (num_elems <= max_elems)
     {
-      // DIY1 sort, only for one block per process
-      if (tot_blocks == groupsize)
-	Diy1Sort(ssort_time, run, comm, num_elems);
-
-      // DIY2 sort
       int args[2];
       args[0] = num_elems;
       args[1] = target_k * hbins * groupsize;
@@ -575,11 +513,9 @@ int main(int argc, char **argv)
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   fflush(stderr);
   if (rank == 0)
-    PrintResults(ssort_time, dsort_time, min_procs, max_procs, proc_x, min_elems, max_elems,
-                 elem_x);
+    PrintResults(dsort_time, min_procs, max_procs, proc_x, min_elems, max_elems, elem_x);
 
   // cleanup
-  delete[] ssort_time;
   delete[] dsort_time;
   MPI_Finalize();
   return 0;

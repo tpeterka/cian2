@@ -8,13 +8,7 @@
 // Argonne, IL 60439
 // tpeterka@mcs.anl.gov
 //
-// Copyright Notice
-// + 2012 University of Chicago
-// See COPYRIGHT in top-level directory.
-//
 //--------------------------------------------------------------------------
-
-#ifdef MOAB
 
 #include "mesh_gen.hpp"
 
@@ -458,5 +452,3 @@ void resolve_and_exchange(Interface *mbint, EntityHandle *mesh_set,
 
 }
 //--------------------------------------------------------------------------
-
-#endif

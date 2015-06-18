@@ -1,6 +1,6 @@
 //---------------------------------------------------------------------------
 //
-// loads two moab meshes, computes an analytical field on the first mesh
+// creates two moab meshes, computes an analytical field on the first mesh
 // and projects the solution onto the second mesh
 // evaluates the error between the projected solution and the original field
 // applied directly to the second mesh
@@ -10,10 +10,6 @@
 // 9700 S. Cass Ave.
 // Argonne, IL 60439
 // tpeterka@mcs.anl.gov
-//
-// Copyright Notice
-// + 2012 University of Chicago
-// See COPYRIGHT in top-level directory.
 //
 //--------------------------------------------------------------------------
 
@@ -28,7 +24,6 @@
 #include "MBTagConventions.hpp"
 #include "moab/ParallelComm.hpp"
 #include "Coupler.hpp"
-#include "loader.hpp"
 
 #ifdef BGQ
 #include <spi/include/kernel/memory.h>
@@ -128,6 +123,7 @@ void SummarizeField(enum field_type ft, EntityHandle *roots, double factor,
                     Interface *mbi, vector<ParallelComm*>& pcs);
 void GetMem(int breakpoint, MPI_Comm comm);
 void GetTiming(int start, int stop, double* times, MPI_Comm comm, bool add = false);
+void error(char* func, char* err);
 
 //--------------------------------------------------------------------------
 int main(int argc, char** argv) {
@@ -267,7 +263,7 @@ void Coupling(MPI_Comm *comms, int src_size, int trgt_size, int src_type, int tr
   // init DIY
   int dim = 3;
   int num_threads = 1; // number of threads DIY can use
-  DIY_Init(dim, num_threads, comms[0]);
+//   DIY_Init(dim, num_threads, comms[0]);
 
   // create MOAB instance
   Interface *mbi = new Core();
@@ -315,7 +311,7 @@ void Coupling(MPI_Comm *comms, int src_size, int trgt_size, int src_type, int tr
   for (int i = 0; i < 2; i++)
     delete pcs[i];
   delete mbi;
-  DIY_Finalize();
+//   DIY_Finalize();
 
 }
 //--------------------------------------------------------------------------
@@ -798,7 +794,9 @@ ErrorCode Interpolate(Interface *mbi, Coupler *mbc, Coupler::Method method,
   assert(method >= Coupler::CONSTANT && method <= Coupler::SPECTRAL);
 
   // initialize spectral elements, if they exist. TODO: turned off for now
-  bool specSou=false, specTar = false;
+  bool specSou = false;
+  bool specTar = false;
+
 //   rval =  mbc.initialize_spectral_elements((EntityHandle)roots[0],
 //                                            (EntityHandle)roots[1], specSou, specTar);
 
@@ -1294,5 +1292,10 @@ void GetTiming(int start, int stop, double* times, MPI_Comm comm, bool add) {
       times[stop] = MPI_Wtime() - times[stop];
   }
 
+}
+// ---------------------------------------------------------------------------
+void error(char* func, char* err)
+{
+    fprintf(stderr, "Error in %s: %s\n", func, err);
 }
 // ---------------------------------------------------------------------------
