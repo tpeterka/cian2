@@ -10,13 +10,13 @@ Cian is released in the [public domain](./COPYING).
 
 a. DIY
 
-```bash
+```
 git clone https://github.com/diatomic/diy2
 ```
 
 b. HDF5 (only if using the coupling proxy app)
 
-```bash
+```
 wget http://www.hdfgroup.org/ftp/HDF5/current/src/hdf5-1.8.15-patch1.tar.gz
 tar -xvf hdf5-1.8.15-patch1.tar.gz
 cd hdf5-1.8.15-patch1
@@ -27,7 +27,7 @@ make install
 
 c. Moab (only if using the coupling proxy app)
 
-```bash
+```
 git clone https://bitbucket.org/fathomteam/moab
 autoreconf -fi
 
@@ -48,14 +48,14 @@ make install
 
 2. Install cian
 
-```bash
+```
 git clone https://github.com/tpeterka/cian2
 cd cian2
 ```
 
 Configure using cmake:
 
-```bash
+```
 cmake /path/to/cian \
 -DCMAKE_CXX_COMPILER=mpicxx \
 -DCMAKE_C_COMPILER=mpicc \
@@ -73,7 +73,7 @@ make
 
 ## Coupling
 
-```bash
+```
 cd coupling
 ```
 
@@ -90,7 +90,7 @@ Edit the run script COUPLING_TEST for the desired parameters as follows:
 
 Notes: If min ss = max ss, the MPI process count will increase by a factor of 2X from min procs to max procs. This will be a strong scaling test. Otherwise, the source and target mesh sizes will double in each dimension (a total factor of 8X) from min to max, and the MPI process count will also increase by a factor of 8X. This will be a weak scaling test.
 
-```bash
+```
 ./COUPLING_TEST
 ```
 
@@ -98,37 +98,37 @@ Notes: If min ss = max ss, the MPI process count will increase by a factor of 2X
 
 ### Neighbor exchange
 
-```bash
+```
 cd communication/neighbor
 ```
 
 Edit the run script NEIGHBOR_TEST for the desired parameters.
 
-```bash
+```
 ./NEIGHBOR_TEST
 ```
 
 ### Merge-reduction
 
-```bash
+```
 cd communication/merge
 ```
 
 Edit the run script MERGE_TEST for the desired parameters.
 
-```bash
+```
 ./MERGE_TEST
 ```
 
 ### Swap-reduction
 
-```bash
+```
 cd communication/swap
 ```
 
 Edit the run script SWAP_TEST for the desired parameters.
 
-```bash
+```
 ./SWAP_TEST
 ```
 
@@ -138,12 +138,12 @@ TBD
 
 ### Sort
 
-```bash
+```
 cd communication/sort
 ```
 
 Edit the run script SORT_TEST for the desired parameters.
 
-```bash
+```
 ./SORT_TEST
 ```

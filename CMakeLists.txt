@@ -13,29 +13,29 @@ endif                       (bgq)
 # Debugging
 if                          (debug)
     if                      (optimize)
-            set             (cxx_flags                  ${CMAKE_CXX_FLAGS_RELWITHDEBINFO})
+            set             (cxx_flags      ${CMAKE_CXX_FLAGS_RELWITHDEBINFO})
     else                    (optimize)
-            set             (cxx_flags                  ${CMAKE_CXX_FLAGS_DEBUG})
+            set             (cxx_flags      ${CMAKE_CXX_FLAGS_DEBUG})
     endif                   (optimize)
     add_definitions         (-DDEBUG)
 else                        (debug)
     if                      (optimize)
-            set             (cxx_flags                  ${CMAKE_CXX_FLAGS_RELEASE})
+            set             (cxx_flags      ${CMAKE_CXX_FLAGS_RELEASE})
     else                    (optimize)
-            set             (cxx_flags                  ${CMAKE_CXX_FLAGS})
+            set             (cxx_flags      ${CMAKE_CXX_FLAGS})
     endif                   (optimize)
 endif                       (debug)
 add_definitions             (${cxx_flags})
 
 # OSX flags
-IF(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+if                          (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     add_definitions	    (-DMAC_OSX)
-ENDIF(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+endif                       (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 
  # MPI
 find_package                (MPI REQUIRED)
 if                          (NOT bgq)
-    set                     (libraries ${libraries}    ${MPI_C_LIBRARIES} ${MPI_CXX_LIBRARIES})
+    set                     (libraries ${libraries} ${MPI_C_LIBRARIES} ${MPI_CXX_LIBRARIES})
 endif                       (NOT bgq)
 
 # Threads
@@ -54,7 +54,7 @@ if                          (NOT diy_thread)
 endif                       (NOT diy_thread)
 
 # DIY
-find_path                   (DIY_INCLUDE_DIRS           diy/types.h)
+find_path                   (DIY_INCLUDE_DIRS diy/types.h)
 
 # Include dirs
 set                         (CMAKE_INCLUDE_SYSTEM_FLAG_CXX "-isystem")
@@ -68,8 +68,18 @@ set			    (libraries
                              ${libraries}
                              ${HDF5_LIBRARY}
                              ${MOAB_LIBRARY}
+                             ${MB_COUPLER_LIBRARY}
                              ${CMAKE_THREAD_LIBS_INIT})
 
 # Subdirectories
-add_subdirectory            (coupling)
-add_subdirectory            (communication)
+if                          (HDF5_INCLUDE_DIRS AND MOAB_INCLUDE_DIRS AND DIY_INCLUDE_DIRS AND
+                             HDF5_LIBRARY AND MOAB_LIBRARY AND MB_COUPLER_LIBRARY)
+    message                 (STATUS "Building coupling proxy app")
+    add_subdirectory        (coupling)
+endif                       ()
+if                          (DIY_INCLUDE_DIRS)
+    message                 (STATUS "Building communication proxy apps")
+    add_subdirectory        (communication)
+else                        ()
+    message                 (ERROR "Need diy2 in order to build any proxy apps")
+endif                       ()

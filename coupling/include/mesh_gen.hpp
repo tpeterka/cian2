@@ -8,19 +8,14 @@
 // Argonne, IL 60439
 // tpeterka@mcs.anl.gov
 //
-// Copyright Notice
-// + 2012 University of Chicago
-// See COPYRIGHT in top-level directory.
-//
 //--------------------------------------------------------------------------
 
 #ifndef _MESH_GEN
 #define _MESH_GEN
 
-#ifdef MOAB
-
 #include "mpi.h"
 #include <stddef.h>
+
 #include "iMesh.h"
 #include "MBiMesh.hpp"
 #include "MBCore.hpp"
@@ -30,21 +25,27 @@
 #include "moab/HomXform.hpp"
 #include "moab/ReadUtilIface.hpp"
 #include "Coupler.hpp"
-#include "cian.h"
+
+#include <diy/decomposition.hpp>
+
+typedef     diy::ContinuousBounds       Bounds;
+
+#define ERR {if(rval!=MB_SUCCESS)printf("MOAB error at line %d in %s\n", __LINE__, __FILE__);}
 
 using namespace moab;
 
 void hex_mesh_gen(int *mesh_size, Interface *mbint, EntityHandle *mesh_set,
-		  ParallelComm *mbpc, int did);
+		  ParallelComm *mbpc, diy::RegularDecomposer<Bounds>* decomp,
+                  diy::Assigner* assign);
 void tet_mesh_gen(int *mesh_size, Interface *mbint, EntityHandle *mesh_set,
-		  ParallelComm *mbpc, int did);
-void create_hexes_and_verts(int *mesh_size, Interface *mbint, 
-			    EntityHandle *mesh_set, int did);
-void create_tets_and_verts(int *mesh_size, Interface *mbint,
-			   EntityHandle *mesh_set, int did);
-void resolve_and_exchange(Interface *mbint, EntityHandle *mesh_set,
-			  ParallelComm *mbpc);
-
-#endif
+		  ParallelComm *mbpc, diy::RegularDecomposer<Bounds>* decomp,
+                  diy::Assigner* assign);
+void create_hexes_and_verts(int *mesh_size, Interface *mbint, EntityHandle *mesh_set,
+                            diy::RegularDecomposer<Bounds>* decomp,
+                            diy::Assigner* assign, ParallelComm* mbpc);
+void create_tets_and_verts(int *mesh_size, Interface *mbint, EntityHandle *mesh_set,
+                           diy::RegularDecomposer<Bounds>* decomp,
+                           diy::Assigner* assign, ParallelComm* mbpc);
+void resolve_and_exchange(Interface *mbint, EntityHandle *mesh_set, ParallelComm *mbpc);
 
 #endif
