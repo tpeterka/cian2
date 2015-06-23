@@ -16,16 +16,11 @@
 # Argonne, IL 60439
 # tpeterka@mcs.anl.gov
 #
-# All rights reserved. May not be used, modified, or copied
-# without permission
-#
 #----------------------------------------------------------------------------
 ARCH=MAC_OSX
 #ARCH=LINUX
 #ARCH=BGQ
-#ARCH=FUSION
-#ARCH=XT
-#ARCH=XE
+#ARCH=XC
 
 # number of procs
 min_procs=2
@@ -41,7 +36,7 @@ if [ $num_nodes -lt 1 ]; then
 fi
 
 # executable
-exe=../install/neighbor
+exe=../install/communication/neighbor/neighbor
 
 # number of items to exchange
 min_items=4
@@ -94,20 +89,7 @@ qsub -n $num_nodes --mode c$ppn -A SDAV -t 60 $exe $args
 
 fi
 
-if [ "$ARCH" = "FUSION" ]; then
-
-mpiexec $exe $args
-
-fi
-
-if [ "$ARCH" = "XT" ]; then
-
-cd /tmp/work/$USER
-aprun -n $max_procs $exe $args
-
-fi
-
-if [ "$ARCH" = "XE" ]; then
+if [ "$ARCH" = "XC" ]; then
 
 aprun -n $max_procs $exe $args
 
