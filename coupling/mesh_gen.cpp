@@ -28,6 +28,7 @@ void hex_mesh_gen(int *mesh_size,            // mesh size (i,j,k) number of vert
     create_hexes_and_verts(mesh_size, mbint, mesh_set, decomp, assign, mbpc);
     resolve_and_exchange(mbint, mesh_set, mbpc);
 }
+
 //
 // generate a regular structured tet mesh
 //
@@ -41,6 +42,7 @@ void tet_mesh_gen(int *mesh_size,            // mesh size (i,j,k) number of vert
     create_tets_and_verts(mesh_size, mbint, mesh_set, decomp, assign, mbpc);
     resolve_and_exchange(mbint, mesh_set, mbpc);
 }
+
 //
 // create hex cells and vertices
 //
@@ -110,8 +112,8 @@ void create_hexes_and_verts(int *mesh_size,   // mesh size (i,j,k) number of ver
     }
 
     // allocate connectivity array
-    EntityHandle startc; // handle for start of cells
-    EntityHandle *starth; // handle for start of connectivity
+    EntityHandle startc;           // handle for start of cells
+    EntityHandle *starth;          // handle for start of connectivity
     int num_hexes =
         (bounds[b].max[0] - bounds[b].min[0]) *
         (bounds[b].max[1] - bounds[b].min[1]) *
@@ -149,18 +151,15 @@ void create_hexes_and_verts(int *mesh_size,   // mesh size (i,j,k) number of ver
                     starth[m++] = startv + F;
                     starth[m++] = startv + G;
                     starth[m++] = startv + H;
-
                 }
-
                 n++;
-
             }
         }
     }
 
     // add vertices and cells to the mesh set
-    Range vRange(startv, startv + num_verts - 1); // vertex range
-    Range cRange(startc, startc + num_hexes - 1); // cell range
+    Range vRange(startv, startv + num_verts - 1);      // vertex range
+    Range cRange(startc, startc + num_hexes - 1);      // cell range
     rval = mbint->add_entities(*mesh_set, vRange); ERR;
     rval = mbint->add_entities(*mesh_set, cRange); ERR;
 
@@ -213,8 +212,8 @@ void create_hexes_and_verts(int *mesh_size,   // mesh size (i,j,k) number of ver
 
     // cleanup
     rval = mbint->release_interface(iface); ERR;
-
 }
+
 //
 // create tet cells and vertices
 //
@@ -235,7 +234,7 @@ void create_tets_and_verts(int *mesh_size,  // mesh size (i,j,k) number of verti
     assign->local_gids(rank, local_gids);
     int nblocks = local_gids.size();
     Bounds bounds[nblocks];
-    int b; // local block number
+    int b;                                   // local block number
 
     // get the read interface from moab
     ReadUtilIface *iface;
@@ -283,16 +282,15 @@ void create_tets_and_verts(int *mesh_size,  // mesh size (i,j,k) number of verti
                 // debug
 //                 fprintf(stderr, "vert[%d] = [%.2lf %.2lf %.2lf]\n",
 //                         n, arrays[0][n], arrays[1][n], arrays[2][n]);
-
                 n++;
             }
         }
     }
 
     // allocate connectivity array
-    EntityHandle startc; // handle for start of cells
-    EntityHandle *starth; // handle for start of connectivity
-    int num_tets = 6 *  // each hex cell will be converted to 6 tets
+    EntityHandle startc;                          // handle for start of cells
+    EntityHandle *starth;                         // handle for start of connectivity
+    int num_tets = 6 *                            // each hex cell will be converted to 6 tets
         (bounds[b].max[0] - bounds[b].min[0]) *
         (bounds[b].max[1] - bounds[b].min[1]) *
         (bounds[b].max[2] - bounds[b].min[2]);
@@ -310,7 +308,7 @@ void create_tets_and_verts(int *mesh_size,  // mesh size (i,j,k) number of verti
                 if (i < bounds[b].max[0] && j < bounds[b].max[1] &&
                     k < bounds[b].max[2])
                 {
-                    int A, B, C, D, E, F, G, H; // hex verts according to my diagram
+                    int A, B, C, D, E, F, G, H;   // hex verts according to my diagram
                     D = n;
                     C = D + 1;
                     H = D + bounds[b].max[0] - bounds[b].min[0] + 1;
@@ -356,18 +354,15 @@ void create_tets_and_verts(int *mesh_size,  // mesh size (i,j,k) number of verti
                     starth[m++] = startv + G;
                     starth[m++] = startv + E;
                     starth[m++] = startv + F;
-
                 }
-
                 n++;
-
             }
         }
     }
 
     // add vertices and cells to the mesh set
-    Range vRange(startv, startv + num_verts - 1); // vertex range
-    Range cRange(startc, startc + num_tets - 1); // cell range
+    Range vRange(startv, startv + num_verts - 1);      // vertex range
+    Range cRange(startc, startc + num_tets - 1);       // cell range
     rval = mbint->add_entities(*mesh_set, vRange); ERR;
     rval = mbint->add_entities(*mesh_set, cRange); ERR;
 
@@ -403,7 +398,7 @@ void create_tets_and_verts(int *mesh_size,  // mesh size (i,j,k) number of verti
         {
             for (int i = bounds[b].min[0]; i < bounds[b].max[0]; i++)
             {
-                for (int t = 0; t < 6; t++) // 6 tets per grid space
+                for (int t = 0; t < 6; t++)            // 6 tets per grid space
                 {
                     gid = (long)1 + (long)t +  (long)i * 6 + (long)j * 6 * (mesh_size[0] - 1) +
                         (long)k * 6 * (mesh_size[0] - 1) * (mesh_size[1] - 1);
@@ -422,6 +417,7 @@ void create_tets_and_verts(int *mesh_size,  // mesh size (i,j,k) number of verti
     rval = mbint->release_interface(iface); ERR;
 
 }
+
 //
 // resolve shared entities
 //
