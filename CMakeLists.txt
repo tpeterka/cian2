@@ -56,11 +56,15 @@ endif                       (NOT diy_thread)
 # DIY
 find_path                   (DIY_INCLUDE_DIRS diy/types.h)
 
+# Zlib
+find_package                (ZLIB)
+
 # Include dirs
 set                         (CMAKE_INCLUDE_SYSTEM_FLAG_CXX "-isystem")
 include_directories         (${DIY_INCLUDE_DIRS}
                              ${HDF5_INCLUDE_DIRS}
                              ${MOAB_INCLUDE_DIRS}
+                             ${ZLIB_INCLUDE_DIRS}
                              SYSTEM ${MPI_INCLUDE_PATH})
 
 # Libraries
@@ -69,11 +73,13 @@ set			    (libraries
                              ${HDF5_LIBRARY}
                              ${MOAB_LIBRARY}
                              ${MB_COUPLER_LIBRARY}
+                             ${ZLIB_LIBRARIES}
                              ${CMAKE_THREAD_LIBS_INIT})
 
 # Subdirectories
 if                          (HDF5_INCLUDE_DIRS AND MOAB_INCLUDE_DIRS AND DIY_INCLUDE_DIRS AND
-                             HDF5_LIBRARY AND MOAB_LIBRARY AND MB_COUPLER_LIBRARY)
+                             HDF5_LIBRARY AND MOAB_LIBRARY AND MB_COUPLER_LIBRARY AND
+                             ZLIB_LIBRARIES)
     message                 (STATUS "Building coupling proxy app")
     add_subdirectory        (coupling)
 endif                       ()

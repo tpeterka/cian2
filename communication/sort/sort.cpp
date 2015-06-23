@@ -1,6 +1,6 @@
 //--------------------------------------------------------------------------
 //
-// testing DIY2's sort performance and comparing to DIY1
+// testing DIY2's sample sort performance and comparing with histogram sort
 //
 // Tom Peterka
 // Argonne National Laboratory

@@ -1,10 +1,10 @@
-# CESAR Integrated Analytics Proxy Applications
+## CESAR Integrated Analytics Proxy Applications
 
-# Licensing
+## Licensing
 
 Cian is released in the [public domain](./COPYING).
 
-# Installation
+## Installation
 
 1. Install Dependencies
 
@@ -69,9 +69,9 @@ cmake /path/to/cian \
 make
 ```
 
-# Execution
+## Execution
 
-## Coupling
+### Coupling
 
 ```
 cd coupling
@@ -94,9 +94,9 @@ Notes: If min ss = max ss, the MPI process count will increase by a factor of 2X
 ./COUPLING_TEST
 ```
 
-## Communication
+### Communication
 
-### Neighbor exchange
+- Neighbor exchange
 
 ```
 cd communication/neighbor
@@ -108,7 +108,7 @@ Edit the run script NEIGHBOR_TEST for the desired parameters.
 ./NEIGHBOR_TEST
 ```
 
-### Merge-reduction
+- Merge-reduction
 
 ```
 cd communication/merge
@@ -120,7 +120,7 @@ Edit the run script MERGE_TEST for the desired parameters.
 ./MERGE_TEST
 ```
 
-### Swap-reduction
+- Swap-reduction
 
 ```
 cd communication/swap
@@ -132,11 +132,11 @@ Edit the run script SWAP_TEST for the desired parameters.
 ./SWAP_TEST
 ```
 
-### All-to-all
+- All-to-all
 
 TBD
 
-### Sort
+- Sort
 
 ```
 cd communication/sort
