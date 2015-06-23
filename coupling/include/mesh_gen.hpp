@@ -28,7 +28,7 @@
 
 #include <diy/decomposition.hpp>
 
-typedef     diy::ContinuousBounds       Bounds;
+typedef     diy::DiscreteBounds       Bounds;
 
 #define ERR {if(rval!=MB_SUCCESS)printf("MOAB error at line %d in %s\n", __LINE__, __FILE__);}
 

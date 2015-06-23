@@ -161,8 +161,8 @@ void create_hexes_and_verts(int *mesh_size,   // mesh size (i,j,k) number of ver
     // add vertices and cells to the mesh set
     Range vRange(startv, startv + num_verts - 1); // vertex range
     Range cRange(startc, startc + num_hexes - 1); // cell range
-    mbint->add_entities(*mesh_set, vRange);
-    mbint->add_entities(*mesh_set, cRange);
+    rval = mbint->add_entities(*mesh_set, vRange); ERR;
+    rval = mbint->add_entities(*mesh_set, cRange); ERR;
 
     // check that long is indeed 8 bytes on this machine
     assert(sizeof(long) == 8);
@@ -209,10 +209,10 @@ void create_hexes_and_verts(int *mesh_size,   // mesh size (i,j,k) number of ver
     }
 
     // update adjacencies (needed by moab)
-    iface->update_adjacencies(startc, num_hexes, 8, starth);
+    rval = iface->update_adjacencies(startc, num_hexes, 8, starth); ERR;
 
     // cleanup
-    mbint->release_interface(iface);
+    rval = mbint->release_interface(iface); ERR;
 
 }
 //
@@ -245,6 +245,12 @@ void create_tets_and_verts(int *mesh_size,  // mesh size (i,j,k) number of verti
     for (int b = 0; b < nblocks; b++)
         decomp->fill_bounds(bounds[b], local_gids[b], false);
 
+    // debug
+//     fprintf(stderr, "nblocks = %d\n", nblocks);
+//     fprintf(stderr, "bounds min = [%d %d %d] max = [%d %d %d]\n",
+//             bounds[0].min[0], bounds[0].min[1], bounds[0].min[2],
+//             bounds[0].max[0], bounds[0].max[1], bounds[0].max[2]);
+
     // todo: multiple blocks per process not really supported yet in this example
     b = 0;
 
@@ -275,8 +281,8 @@ void create_tets_and_verts(int *mesh_size,  // mesh size (i,j,k) number of verti
                 arrays[2][n] = double(k) / (mesh_size[2] - 1);
 
                 // debug
-                // 	fprintf(stderr, "vert[%d] = [%.2lf %.2lf %.2lf]\n",
-                // 		n, arrays[0][n], arrays[1][n], arrays[2][n]);
+//                 fprintf(stderr, "vert[%d] = [%.2lf %.2lf %.2lf]\n",
+//                         n, arrays[0][n], arrays[1][n], arrays[2][n]);
 
                 n++;
             }
@@ -290,7 +296,7 @@ void create_tets_and_verts(int *mesh_size,  // mesh size (i,j,k) number of verti
         (bounds[b].max[0] - bounds[b].min[0]) *
         (bounds[b].max[1] - bounds[b].min[1]) *
         (bounds[b].max[2] - bounds[b].min[2]);
-    rval = iface->get_element_connect(num_tets, 4, MBTET, 0, startc, starth);
+    rval = iface->get_element_connect(num_tets, 4, MBTET, 0, startc, starth); ERR;
 
     // populate the connectivity array
     n = 0;
@@ -362,8 +368,8 @@ void create_tets_and_verts(int *mesh_size,  // mesh size (i,j,k) number of verti
     // add vertices and cells to the mesh set
     Range vRange(startv, startv + num_verts - 1); // vertex range
     Range cRange(startc, startc + num_tets - 1); // cell range
-    mbint->add_entities(*mesh_set, vRange);
-    mbint->add_entities(*mesh_set, cRange);
+    rval = mbint->add_entities(*mesh_set, vRange); ERR;
+    rval = mbint->add_entities(*mesh_set, cRange); ERR;
 
     // set global ids
     long gid;
@@ -381,7 +387,8 @@ void create_tets_and_verts(int *mesh_size,  // mesh size (i,j,k) number of verti
             {
                 gid = (long)1 + (long)i + (long)j * (mesh_size[0]) +
                     (long)k * (mesh_size[0]) * (mesh_size[1]);
-                // 	       fprintf(stderr, "i,j,k = [%d %d %d] gid = %ld\n", i, j, k, gid);
+                // debug
+//                 fprintf(stderr, "i,j,k = [%d %d %d] gid = %ld\n", i, j, k, gid);
                 rval = mbint->tag_set_data(global_id_tag, &handle, 1, &gid); ERR;
                 handle++;
             }
@@ -409,10 +416,10 @@ void create_tets_and_verts(int *mesh_size,  // mesh size (i,j,k) number of verti
     }
 
     // update adjacencies (needed by moab)
-    iface->update_adjacencies(startc, num_tets, 4, starth);
+    rval = iface->update_adjacencies(startc, num_tets, 4, starth); ERR;
 
     // cleanup
-    mbint->release_interface(iface);
+    rval = mbint->release_interface(iface); ERR;
 
 }
 //

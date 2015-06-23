@@ -152,7 +152,7 @@ void PrepMeshes(int src_type,
     vector<bool>                                     share_face(3, true);
     vector<bool>                                     wrap(3, false);
 
-    vector<diy::mpi::communicator> comms;
+    vector<diy::mpi::communicator> comms(2);
     comms[0] = pcs[0]->comm();
     comms[1] = pcs[1]->comm();
 
@@ -235,7 +235,6 @@ void PrepMeshes(int src_type,
     // add field to input mesh
     PutVertexField(mbi, roots[0], "vertex_field", factor);
     PutElementField(mbi, roots[0], "element_field", factor);
-
 }
 //
 // couples two meshes
@@ -313,7 +312,6 @@ void Coupling(MPI_Comm *mpi_comms,
     delete mbi;
 
 }
-//--------------------------------------------------------------------------
 // project vertex field from source to target and target to source
 //
 void ProjectField(Interface* mbi, Coupler* mbc_for, Coupler* mbc_rev, EntityHandle* roots,
@@ -360,7 +358,6 @@ void ProjectField(Interface* mbi, Coupler* mbc_for, Coupler* mbc_rev, EntityHand
     SummarizeField(type, roots, factor, mbi, pcs);
 
 }
-//--------------------------------------------------------------------------
 // prints total and per iteration times
 // resets point location, interpolation, and tag exchange times for reuse
 //
@@ -384,7 +381,6 @@ void PrintTimes(double* times, int num_iter)
     times[EXCH_TIME] = 0.0;
 
 }
-//--------------------------------------------------------------------------
 // prints final times
 //
 // times: all times
@@ -402,7 +398,6 @@ void PrintFinalTimes(double* times)
     }
 
 }
-//--------------------------------------------------------------------------
 // print mesh types and sizes
 //
 void PrintMeshSizes(int src_type, int src_size, int trgt_type, int trgt_size)
@@ -420,7 +415,6 @@ void PrintMeshSizes(int src_type, int src_size, int trgt_type, int trgt_size)
     }
 
 }
-//--------------------------------------------------------------------------
 //
 // return a value for the field position (simple magnitude)
 //
@@ -428,7 +422,6 @@ double physField(double x, double y, double z, double factor)
 {
     return factor * sqrt(x * x + y * y + z * z);
 }
-//--------------------------------------------------------------------------
 //
 // add a value to each element in the field
 //
@@ -459,7 +452,6 @@ void PutElementField(Interface *mbi, EntityHandle eh, const char *tagname,
     }
 
 }
-//--------------------------------------------------------------------------
 //
 // gets the element field
 //
@@ -527,7 +519,6 @@ void GetElementField(Interface *mbi, EntityHandle eh, const char *tagname,
     MPI_Op_free(&op);
 
 }
-//--------------------------------------------------------------------------
 //
 // add a value to each vertex in the field
 //
@@ -560,7 +551,6 @@ void PutVertexField(Interface *mbi, EntityHandle eh, const char *tagname,
     }
 
 }
-//--------------------------------------------------------------------------
 //
 // gets the vertex field
 //
@@ -625,7 +615,6 @@ void GetVertexField(Interface *mbi, EntityHandle eh, const char *tagname, double
     MPI_Op_free(&op);
 
 }
-//--------------------------------------------------------------------------
 //
 // custom reduction for aggregate statistics
 //
@@ -651,7 +640,6 @@ void AggregateCouplingStats(void *in, void *inout, int *len, MPI_Datatype *type)
         ((double *)inout)[MAX_REF] = ((double *)in)[MAX_REF];
 
 }
-//--------------------------------------------------------------------------
 //
 // prints aggregate stats and timing info
 //
@@ -669,7 +657,6 @@ void PrintCouplingStats(char *title, double *glo_stats)
     fprintf(stderr, "------------------------------------------------------\n");
 
 }
-//--------------------------------------------------------------------------
 //
 // initializes the projection from source to target
 //
@@ -693,7 +680,6 @@ ErrorCode InitProjection(Interface *mbi, vector<ParallelComm *> &pcs,
     return MB_SUCCESS;
 
 }
-//--------------------------------------------------------------------------
 //
 // runs the moab coupler to do the projection from source to target
 //
@@ -718,7 +704,6 @@ ErrorCode Project(Interface *mbi, Coupler *mbc, Coupler::Method method,
     return MB_SUCCESS;
 
 }
-//--------------------------------------------------------------------------
 //
 // step one of the moab coupler: locate points to be interpolated
 //
@@ -779,7 +764,6 @@ ErrorCode LocatePoints(Interface *mbi, Coupler *mbc, Coupler::Method method,
     return MB_SUCCESS;
 
 }
-//--------------------------------------------------------------------------
 //
 // step two of the moab coupler: interpolate points
 //
@@ -880,7 +864,6 @@ ErrorCode Interpolate(Interface *mbi, Coupler *mbc, Coupler::Method method,
     return MB_SUCCESS;
 
 }
-//--------------------------------------------------------------------------
 //
 // parse arguments
 //
@@ -970,7 +953,6 @@ void ParseArgs(int argc, char **argv, int *min_procs, int *max_procs,
     }
 
 }
-//--------------------------------------------------------------------------
 //
 // prints mesh statistics (for debugging)
 //
@@ -1053,7 +1035,6 @@ void PrintMeshStats(Interface *mbint, EntityHandle *mesh_set, ParallelComm *mbpc
     mesh_num = (mesh_num + 1) % 2;
 
 }
-//--------------------------------------------------------------------------
 //
 // summarizes resulting field (vertex or element) by comparing to analytical solution and
 // computing (and printing) error statistics
@@ -1099,7 +1080,6 @@ void SummarizeField(enum field_type ft, EntityHandle *roots, double factor,
     }
 
 }
-//--------------------------------------------------------------------------
 //
 // memory profile, prints max reseident usage
 //
@@ -1166,7 +1146,6 @@ void GetMem(int breakpoint, MPI_Comm comm)
 #endif // MEMORY
 
 }
-// ---------------------------------------------------------------------------
 //
 // starts / stops timing
 // (does a barrier)
@@ -1205,7 +1184,6 @@ void GetTiming(int start, int stop, double* times, MPI_Comm comm, bool add)
     }
 
 }
-// ---------------------------------------------------------------------------
 
 int main(int argc, char** argv)
 {
@@ -1323,5 +1301,4 @@ int main(int argc, char** argv)
 
     // cleanup
     MPI_Finalize();
-
 }
