@@ -78,10 +78,14 @@ struct AddBlock
     diy::Master&  master;
 };
 
+//
 // reset the size and data values in a block
 // args[0]: num_elems
 // args[1]: bins
-void ResetBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* args)
+//
+void ResetBlock(void* b_,
+                const diy::Master::ProxyWithLink& cp,
+                void* args)
 {
     Block* b      = static_cast<Block*>(b_);
     int *a        = (int*)args;
@@ -90,7 +94,9 @@ void ResetBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* args)
     b->generate_data(num_elems);
 }
 
-void VerifyBlock(void* b_, const diy::Master::ProxyWithLink& cp, void*)
+void VerifyBlock(void* b_,
+                 const diy::Master::ProxyWithLink& cp,
+                 void*)
 {
     Block* b   = static_cast<Block*>(b_);
     int act_min, act_max; // actual min and max of the values
@@ -173,7 +179,8 @@ struct SortPartners
 
 
 // helper functions for the sort operator
-void compute_local_histogram(void* b_, const diy::ReduceProxy& srp)
+void compute_local_histogram(void* b_,
+                             const diy::ReduceProxy& srp)
 {
     Block* b = static_cast<Block*>(b_);
 
@@ -193,7 +200,9 @@ void compute_local_histogram(void* b_, const diy::ReduceProxy& srp)
 }
 
 
-void receive_histogram(void* b_, const diy::ReduceProxy& srp, Histogram& histogram)
+void receive_histogram(void* b_,
+                       const diy::ReduceProxy& srp,
+                       Histogram& histogram)
 {
     Block* b = static_cast<Block*>(b_);
 
@@ -211,7 +220,8 @@ void receive_histogram(void* b_, const diy::ReduceProxy& srp, Histogram& histogr
     }
 }
 
-void add_histogram(void* b_, const diy::ReduceProxy& srp)
+void add_histogram(void* b_,
+                   const diy::ReduceProxy& srp)
 {
     Block* b = static_cast<Block*>(b_);
 
@@ -222,7 +232,9 @@ void add_histogram(void* b_, const diy::ReduceProxy& srp)
         srp.enqueue(srp.out_link().target(i), histogram);
 }
 
-void enqueue_exchange(void* b_, const diy::ReduceProxy& srp, const Histogram& histogram)
+void enqueue_exchange(void* b_,
+                      const diy::ReduceProxy& srp,
+                      const Histogram& histogram)
 {
     Block*   b        = static_cast<Block*>(b_);
 
@@ -276,7 +288,8 @@ void enqueue_exchange(void* b_, const diy::ReduceProxy& srp, const Histogram& hi
     b->max = new_max;
 }
 
-void dequeue_exchange(void* b_, const diy::ReduceProxy& srp)
+void dequeue_exchange(void* b_,
+                      const diy::ReduceProxy& srp)
 {
     Block* b = static_cast<Block*>(b_);
 
@@ -300,13 +313,16 @@ void dequeue_exchange(void* b_, const diy::ReduceProxy& srp)
     }
 }
 
-void sort_local(void* b_, const diy::ReduceProxy&)
+void sort_local(void* b_,
+                const diy::ReduceProxy&)
 {
     Block* b = static_cast<Block*>(b_);
     std::sort(b->values.begin(), b->values.end());
 }
 
-void sort_all(void* b_, const diy::ReduceProxy& srp, const SortPartners& partners)
+void sort_all(void* b_,
+              const diy::ReduceProxy& srp,
+              const SortPartners& partners)
 {
     if (srp.round() == partners.rounds())
     {
@@ -328,16 +344,16 @@ void sort_all(void* b_, const diy::ReduceProxy& srp, const SortPartners& partner
         add_histogram(b_, srp);
 }
 
-// DIY2 sort
 //
-// time: time (output)
-// run: run number
-// k: desired k value
-// comm: MPI communicator
-// totblocks: total number of blocks
-// master, assigner: diy usual
-void Diy2Sort(double *time, int run, int k, MPI_Comm comm, int totblocks,
-              diy::Master& master, diy::ContiguousAssigner& assigner)
+// histogram sort
+//
+void HistogramSort(double *time,             // time (output)
+                   int run,                  // run number
+                   int k,                    // desired k value
+                   MPI_Comm comm,            // MPI communicator
+                   int totblocks,            // total number of blocks
+                   diy::Master& master,      // diy usual
+                   diy::ContiguousAssigner& assigner)
 {
     MPI_Barrier(comm);
     double t0 = MPI_Wtime();
@@ -349,17 +365,42 @@ void Diy2Sort(double *time, int run, int k, MPI_Comm comm, int totblocks,
     time[run] = MPI_Wtime() - t0;
 }
 
+//
+// sample sort
+//
+void SampleSort(double *time,                // time (output)
+                   int run,                  // run number
+                   int k,                    // desired k value
+                   MPI_Comm comm,            // MPI communicator
+                   int totblocks,            // total number of blocks
+                   diy::Master& master,      // diy usual
+                   diy::ContiguousAssigner& assigner)
+{
+    MPI_Barrier(comm);
+    double t0 = MPI_Wtime();
+
+//     diy::sort(master, assigner, &ValueBlock::values, &ValueBlock::samples, num_samples,
+//               std::less<Value>(), k);
+
+    MPI_Barrier(comm);
+    time[run] = MPI_Wtime() - t0;
+}
+
+//
 // print results
 //
-// dsort_time: times
-// min_procs, max_procs, proc_x: process range
-// min_elems, max_elems, elem_x: data range
-void PrintResults(double *dsort_time, int min_procs,
-		  int max_procs, int proc_x, int min_elems, int max_elems, int elem_x)
+void PrintResults(double *hsort_time,        // histogram sort times
+                  double *ssort_time,        // sample sort times
+                  int min_procs,             // minimum number of procs
+		  int max_procs,             // maximum number of procs
+                  int proc_x,                // factor change for procs
+                  int min_elems,             // minimum number of elements
+                  int max_elems,             // maximum number of elements
+                  int elem_x)                // factor change for elements
 {
-    int elem_iter = 0;                                            // element iteration number
-    int num_elem_iters = 0;                                       // number of element iterations
-    int proc_iter;                                                // process iteration number
+    int elem_iter = 0;                       // element iteration number
+    int num_elem_iters = 0;                  // number of element iterations
+    int proc_iter;                           // process iteration number
 
     for (int i = min_elems; i <= max_elems; i *= elem_x)
         num_elem_iters++;
@@ -371,7 +412,7 @@ void PrintResults(double *dsort_time, int min_procs,
     while (num_elems <= max_elems)
     {
         fprintf(stderr, "\n# num_elements = %d\n", num_elems);
-        fprintf(stderr, "# procs \t diy1 time \t diy2 time\n");
+        fprintf(stderr, "# procs \t histogram sort time \t sample sort time\n");
 
         // iterate over processes
         int groupsize = min_procs;
@@ -379,7 +420,7 @@ void PrintResults(double *dsort_time, int min_procs,
         while (groupsize <= max_procs)
         {
             int i = proc_iter * num_elem_iters + elem_iter; // index into times
-            fprintf(stderr, "%d \t\t %.3lf\n", groupsize, dsort_time[i]);
+            fprintf(stderr, "%d \t\t %.3lf \t\t %.3lf\n", groupsize, hsort_time[i], ssort_time[i]);
 
             groupsize *= proc_x;
             proc_iter++;
@@ -392,9 +433,18 @@ void PrintResults(double *dsort_time, int min_procs,
     fprintf(stderr, "\n--------------------------\n\n");
 }
 
+//
 // gets command line args
-void GetArgs(int argc, char **argv, int &min_procs,
-	     int &min_elems, int &max_elems, int &nb, int &target_k,int &hbins)
+//
+void GetArgs(int argc,
+             char **argv,
+             int &min_procs,
+	     int &min_elems,
+             int &max_elems,
+             int &nb,
+             int &target_k,
+             int &ns,
+             int &hbins)
 {
     using namespace opts;
     Options ops(argc, argv);
@@ -409,16 +459,18 @@ void GetArgs(int argc, char **argv, int &min_procs,
           >> PosOption(max_elems)
           >> PosOption(nb)
           >> PosOption(target_k)
+          >> PosOption(ns)
           >> PosOption(hbins)))
     {
         if (rank == 0)
-            fprintf(stderr, "Usage: %s min_procs min_elems max_elems nb target_k hbins\n", argv[0]);
+            fprintf(stderr, "Usage: %s min_procs min_elems max_elems nb target_k ns hbins\n",
+                    argv[0]);
         exit(1);
     }
 
     if (rank == 0)
-        fprintf(stderr, "min_procs = %d min_elems = %d max_elems = %d nb = %d target_k = %d hbins = %d\n",
-                min_procs, min_elems, max_elems, nb, target_k, hbins);
+        fprintf(stderr, "min_procs = %d min_elems = %d max_elems = %d nb = %d target_k = %d ns = %d hbins = %d\n",
+                min_procs, min_elems, max_elems, nb, target_k, ns, hbins);
 }
 
 int main(int argc, char **argv)
@@ -431,6 +483,7 @@ int main(int argc, char **argv)
     int rank, groupsize;      // MPI usual
     int min_procs;            // minimum number of processes
     int max_procs;            // maximum number of processes (groupsize of MPI_COMM_WORLD)
+    int nsamples;             // number of samples
     int hbins;                // number of histogram bins
     int proc_x, elem_x;       // factors for procs and elems
 
@@ -440,7 +493,7 @@ int main(int argc, char **argv)
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &max_procs);
 
-    GetArgs(argc, argv, min_procs, min_elems, max_elems, nblocks, target_k, hbins);
+   GetArgs(argc, argv, min_procs, min_elems, max_elems, nblocks, target_k, nsamples, hbins);
 
     // timing
     int num_runs = 0;
@@ -450,7 +503,8 @@ int main(int argc, char **argv)
             num_runs++;
     }
 
-    double *dsort_time = new double[num_runs]; // sort from diy2
+    double *hsort_time = new double[num_runs]; // histogram sort time
+    double *ssort_time = new double[num_runs]; // sample sort time
 
     // iterate over processes
     int run = 0; // run number
@@ -496,7 +550,9 @@ int main(int argc, char **argv)
             args[0] = num_elems;
             args[1] = target_k * hbins * groupsize;
             master.foreach(ResetBlock, args);
-            Diy2Sort(dsort_time, run, target_k, comm, tot_blocks, master, assigner);
+            HistogramSort(hsort_time, run, target_k, comm, tot_blocks, master, assigner);
+            master.foreach(ResetBlock, args);
+            SampleSort(ssort_time, run, target_k, comm, tot_blocks, master, assigner);
 
             // debug
             //master.foreach(VerifyBlock);
@@ -514,10 +570,18 @@ int main(int argc, char **argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     fflush(stderr);
     if (rank == 0)
-        PrintResults(dsort_time, min_procs, max_procs, proc_x, min_elems, max_elems, elem_x);
+        PrintResults(hsort_time,
+                     ssort_time,
+                     min_procs,
+                     max_procs,
+                     proc_x,
+                     min_elems,
+                     max_elems,
+                     elem_x);
 
     // cleanup
-    delete[] dsort_time;
+    delete[] hsort_time;
+    delete[] ssort_time;
     MPI_Finalize();
     return 0;
 }

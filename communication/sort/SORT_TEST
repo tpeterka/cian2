@@ -50,13 +50,16 @@ nb=1
 # target k-value
 k=2
 
+# number of samples per block
+ns=8
+
 # histogram bins
 h=32
 #------
 #
 # program arguments
 #
-args="$min_procs $min_elems $max_elems $nb $k $h"
+args="$min_procs $min_elems $max_elems $nb $k $ns $h"
 
 #------
 #

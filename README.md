@@ -6,7 +6,7 @@ Cian is released in the [public domain](./COPYING).
 
 ## Installation
 
-1. Install Dependencies
+1. Install dependencies
 
 a. DIY
 
@@ -64,6 +64,7 @@ cmake /path/to/cian \
 -DHDF5_LIBRARY=/path/to/hdf5/lib/libhdf5.a \
 -DMOAB_INCLUDE_DIRS=/path/to/moab/include \
 -DMOAB_LIBRARY=/path/to/moab/lib/libMOAB.a \
+-DMB_COUPLER_LIBRARY=/path/to/moab/lib/libmbcoupler.a \
 -Ddebug=true \
 
 make
@@ -77,10 +78,9 @@ make
 cd coupling
 ```
 
-Edit the run script COUPLING_TEST for the desired parameters as follows:
+Edit the run script COUPLING_TEST for the desired parameters:
 
 - min procs, max procs = minimum and maximum number of MPI processes
-- mf = n (do not read mesh files from disk, create on the fly instead)
 - st = source mesh type (h or t for hexahedral or tetrahedral)
 - min ss, max ss = minimum and maximum source mesh size (regular grid vertices per side, eg. ss = 100)
 - tt = target mesh type (h or t for hexahedral or tetrahedral)
@@ -102,7 +102,12 @@ Notes: If min ss = max ss, the MPI process count will increase by a factor of 2X
 cd communication/neighbor
 ```
 
-Edit the run script NEIGHBOR_TEST for the desired parameters.
+Edit the run script NEIGHBOR_TEST for the desired parameters:
+
+- min procs, max procs = minimum and maximum number of MPI processes
+- min items, max items = minimum and maximum number of items to exchange
+- item size = number of integers in one item (* 4 bytes per int)
+- nb = number of blocks per MPI process
 
 ```
 ./NEIGHBOR_TEST
@@ -114,7 +119,15 @@ Edit the run script NEIGHBOR_TEST for the desired parameters.
 cd communication/merge
 ```
 
-Edit the run script MERGE_TEST for the desired parameters.
+The reduction operator used in this merge reduction is the noncommutative ``over'' operator used in image composition. For every pair of four elements (e.g., the RGBA channels of a pixel), the first three elements are modulated by the value of the fourth element and added in a predetermined order.
+
+Edit the run script MERGE_TEST for the desired parameters:
+
+- min procs, max procs = minimum and maximum number of MPI processes
+- min elems, max elems = minimum and maximum number of elements to reduce. Each element is one floating point value (* 4 bytes per float)
+- nb = number of blocks per MPI process
+- k = target k value (radix for k-ary reduction)
+- op = the reduction operator can be 0 or 1 for no-op or image composition, respectively
 
 ```
 ./MERGE_TEST
@@ -126,7 +139,15 @@ Edit the run script MERGE_TEST for the desired parameters.
 cd communication/swap
 ```
 
-Edit the run script SWAP_TEST for the desired parameters.
+The reduction operator used in this swap reduction is the noncommutative ``over'' operator used in image composition. For every pair of four elements (e.g., the RGBA channels of a pixel), the first three elements are modulated by the value of the fourth element and added in a predetermined order.
+
+Edit the run script SWAP_TEST for the desired parameters:
+
+- min procs, max procs = minimum and maximum number of MPI processes
+- min elems, max elems = minimum and maximum number of elements to reduce. Each element is one floating point value (* 4 bytes per float)
+- nb = number of blocks per MPI process
+- k = target k value (radix for k-ary reduction)
+- op = the reduction operator can be 0 or 1 for no-op or image composition, respectively
 
 ```
 ./SWAP_TEST
@@ -142,7 +163,14 @@ TBD
 cd communication/sort
 ```
 
-Edit the run script SORT_TEST for the desired parameters.
+Edit the run script SORT_TEST for the desired parameters:
+
+- min procs, max procs = minimum and maximum number of MPI processes
+- min elems, max elems = minimum and maximum number of elements to sort. Each element is one integer (* 4 bytes per int) randomly assigned in the range minimum to maximum values of a signed integer
+- nb = number of blocks per MPI process
+- k = target k value (radix for k-ary reduction)
+- ns = number of samples per block for the sample sort
+- h = number of histogram bins per block for the histogram sort
 
 ```
 ./SORT_TEST
