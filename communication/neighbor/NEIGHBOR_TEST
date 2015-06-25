@@ -36,7 +36,7 @@ if [ $num_nodes -lt 1 ]; then
 fi
 
 # executable
-exe=../install/communication/neighbor/neighbor
+exe=./neighbor
 
 # number of items to exchange
 min_items=4

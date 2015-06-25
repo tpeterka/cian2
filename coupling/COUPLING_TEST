@@ -36,7 +36,7 @@ if [ $num_nodes -lt 1 ]; then
 fi
 
 # executable
-exe=../install/coupling/coupling
+exe=./coupling
 
 # source mesh type (h or t)
 st=t

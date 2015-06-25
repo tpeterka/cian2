@@ -36,7 +36,7 @@ if [ $num_nodes -lt 1 ]; then
 fi
 
 # executable
-exe=../install/communication/merge/merge
+exe=./merge
 
 # number of elements to reduce
 K=1024

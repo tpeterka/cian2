@@ -420,7 +420,8 @@ void PrintResults(double *hsort_time,        // histogram sort times
         while (groupsize <= max_procs)
         {
             int i = proc_iter * num_elem_iters + elem_iter; // index into times
-            fprintf(stderr, "%d \t\t %.3lf \t\t %.3lf\n", groupsize, hsort_time[i], ssort_time[i]);
+            fprintf(stderr, "%d \t\t %.3lf \t\t\t %.3lf\n",
+                    groupsize, hsort_time[i], ssort_time[i]);
 
             groupsize *= proc_x;
             proc_iter++;

@@ -6,7 +6,7 @@ Cian is released in the [public domain](./COPYING).
 
 ## Installation
 
-1. Install dependencies
+1. Build dependencies
 
 a. DIY
 
@@ -46,19 +46,15 @@ make -j 4
 make install
 ```
 
-2. Install cian
+2. Build cian
 
 ```
 git clone https://github.com/tpeterka/cian2
-cd cian2
-```
 
-Configure using cmake:
-
-```
-cmake /path/to/cian \
+cmake /path/to/cian2 \
 -DCMAKE_CXX_COMPILER=mpicxx \
 -DCMAKE_C_COMPILER=mpicc \
+-DCMAKE_INSTALL_PREFIX=/path/to/cian2/install \
 -DDIY_INCLUDE_DIRS=/path/to/diy2/include \
 -DHDF5_INCLUDE_DIRS=/path/to/hdf5/include \
 -DHDF5_LIBRARY=/path/to/hdf5/lib/libhdf5.a \
@@ -68,6 +64,7 @@ cmake /path/to/cian \
 -Ddebug=true \
 
 make
+make install
 ```
 
 ## Execution
