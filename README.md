@@ -2,11 +2,11 @@
 
 ## Licensing
 
-Cian is released in the [public domain](./COPYING).
+Cian is [public domain](./COPYING) software.
 
 ## Installation
 
-1. Build dependencies
+Build dependencies
 
 a. DIY
 
@@ -46,7 +46,7 @@ make -j 4
 make install
 ```
 
-2. Build cian
+Build cian
 
 ```
 git clone https://github.com/tpeterka/cian2
@@ -72,7 +72,7 @@ make install
 ### Coupling
 
 ```
-cd coupling
+cd path/to/cian2/install/coupling
 ```
 
 Edit the run script COUPLING_TEST for the desired parameters:
@@ -96,7 +96,7 @@ Notes: If min ss = max ss, the MPI process count will increase by a factor of 2X
 - Neighbor exchange
 
 ```
-cd communication/neighbor
+cd path/to/cian2/install/communication/neighbor
 ```
 
 Edit the run script NEIGHBOR_TEST for the desired parameters:
@@ -113,7 +113,7 @@ Edit the run script NEIGHBOR_TEST for the desired parameters:
 - Merge-reduction
 
 ```
-cd communication/merge
+cd path/to/cian2/install/communication/merge
 ```
 
 The reduction operator used in this merge reduction is the noncommutative ``over'' operator used in image composition. For every pair of four elements (e.g., the RGBA channels of a pixel), the first three elements are modulated by the value of the fourth element and added in a predetermined order.
@@ -133,7 +133,7 @@ Edit the run script MERGE_TEST for the desired parameters:
 - Swap-reduction
 
 ```
-cd communication/swap
+cd path/to/cian2/install/communication/swap
 ```
 
 The reduction operator used in this swap reduction is the noncommutative ``over'' operator used in image composition. For every pair of four elements (e.g., the RGBA channels of a pixel), the first three elements are modulated by the value of the fourth element and added in a predetermined order.
@@ -157,7 +157,7 @@ TBD
 - Sort
 
 ```
-cd communication/sort
+cd path/to/cian2/install/communication/sort
 ```
 
 Edit the run script SORT_TEST for the desired parameters:
