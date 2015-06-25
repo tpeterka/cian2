@@ -20,8 +20,8 @@
 #include <stddef.h>
 #include <sys/resource.h>
 
-#include "MBCore.hpp"
-#include "MBRange.hpp"
+#include "moab/Core.hpp"
+#include "moab/Range.hpp"
 #include "MBTagConventions.hpp"
 #include "moab/ParallelComm.hpp"
 #include "Coupler.hpp"
