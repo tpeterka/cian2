@@ -223,7 +223,6 @@ int main(int argc, char **argv)
 void enqueue(void* b_, const diy::Master::ProxyWithLink& cp, void*)
 {
   vector <int> vals(num_ints, 0);
-
   for (int i = 0; i < num_items; i++)
   {
     for (int j = 0; j < cp.link()->size(); j++)

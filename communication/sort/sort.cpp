@@ -359,7 +359,7 @@ void HistogramSort(double *time,             // time (output)
     double t0 = MPI_Wtime();
 
     SortPartners partners(totblocks, k);
-    diy::reduce(master, assigner, partners, sort_all);
+    diy::reduce(master, assigner, partners, &sort_all);
 
     MPI_Barrier(comm);
     time[run] = MPI_Wtime() - t0;
@@ -550,9 +550,9 @@ int main(int argc, char **argv)
             int args[2];
             args[0] = num_elems;
             args[1] = target_k * hbins * groupsize;
-            master.foreach(ResetBlock, args);
+            master.foreach(&ResetBlock, args);
             HistogramSort(hsort_time, run, target_k, comm, tot_blocks, master, assigner);
-            master.foreach(ResetBlock, args);
+            master.foreach(&ResetBlock, args);
             SampleSort(ssort_time, run, target_k, comm, tot_blocks, master, assigner);
 
             // debug

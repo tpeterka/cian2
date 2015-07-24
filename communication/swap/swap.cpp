@@ -278,13 +278,13 @@ int main(int argc, char **argv)
             args[0] = num_elems;
             args[1] = tot_blocks;
 
-            master.foreach(ResetBlock, args);
+            master.foreach(&ResetBlock, args);
 
             DiySwap(swap_time, run, target_k, comm, dim, tot_blocks, true, master, assigner, op);
 
             // debug
             //       master.foreach(PrintBlock);
-            master.foreach(CheckBlock, reduce_scatter_data);
+            master.foreach(&CheckBlock, reduce_scatter_data);
 
             num_elems *= 2; // double the number of elements every time
             run++;
@@ -471,15 +471,15 @@ void DiySwap(double *swap_time, int run, int k, MPI_Comm comm, int dim, int totb
     //printf("---- %d ----\n", totblocks);
     diy::RegularSwapPartners  partners(dim, totblocks, k, contiguous);
     if (op)
-        diy::reduce(master, assigner, partners, ComputeSwap);
+        diy::reduce(master, assigner, partners, &ComputeSwap);
     else
-        diy::reduce(master, assigner, partners, NoopSwap);
+        diy::reduce(master, assigner, partners, &NoopSwap);
 
     if (contiguous)
     {
         FinalSwapPartners final_swap_partners(totblocks, partners);
         if (final_swap_partners.rounds() > 0)
-            diy::reduce(master, assigner, final_swap_partners, FinalSwapExchange);
+            diy::reduce(master, assigner, final_swap_partners, &FinalSwapExchange);
     }
 
     //printf("------------\n");

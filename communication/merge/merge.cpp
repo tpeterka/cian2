@@ -205,7 +205,7 @@ int main(int argc, char **argv)
       int args[2];
       args[0] = num_elems;
       args[1] = tot_blocks;
-      master.foreach(ResetBlock, args);
+      master.foreach(&ResetBlock, args);
 
       DiyMerge(merge_time, run, target_k, comm, dim, tot_blocks, true, master, assigner, op);
 
@@ -304,9 +304,9 @@ void DiyMerge(double *merge_time, int run, int k, MPI_Comm comm, int dim, int to
 
   diy::RegularMergePartners  partners(dim, totblocks, k, contiguous);
   if (op)
-    diy::reduce(master, assigner, partners, ComputeMerge);
+    diy::reduce(master, assigner, partners, &ComputeMerge);
   else
-    diy::reduce(master, assigner, partners, NoopMerge);
+    diy::reduce(master, assigner, partners, &NoopMerge);
 
   MPI_Barrier(comm);
   merge_time[run] = MPI_Wtime() - t0;
