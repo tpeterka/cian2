@@ -1,5 +1,7 @@
 ## CESAR Integrated Analytics Proxy Applications
 
+A set of DIY2 and MOAB benchmarks for coupling, communication, and I/O
+
 ## Licensing
 
 Cian is [public domain](./COPYING) software.
@@ -101,10 +103,10 @@ cd path/to/cian2/install/communication/neighbor
 
 Edit the run script NEIGHBOR_TEST for the desired parameters:
 
-- min procs, max procs = minimum and maximum number of MPI processes
-- min items, max items = minimum and maximum number of items to exchange
-- item size = number of integers in one item (* 4 bytes per int)
-- nb = number of blocks per MPI process
+    - min procs, max procs = minimum and maximum number of MPI processes
+    - min items, max items = minimum and maximum number of items to exchange
+    - item size = number of integers in one item (* 4 bytes per int)
+    - nb = number of blocks per MPI process
 
 ```
 ./NEIGHBOR_TEST
@@ -120,11 +122,11 @@ The reduction operator used in this merge reduction is the noncommutative ``over
 
 Edit the run script MERGE_TEST for the desired parameters:
 
-- min procs, max procs = minimum and maximum number of MPI processes
-- min elems, max elems = minimum and maximum number of elements to reduce. Each element is one floating point value (* 4 bytes per float)
-- nb = number of blocks per MPI process
-- k = target k value (radix for k-ary reduction)
-- op = the reduction operator can be 0 or 1 for no-op or image composition, respectively
+    - min procs, max procs = minimum and maximum number of MPI processes
+    - min elems, max elems = minimum and maximum number of elements to reduce. Each element is one floating point value (* 4 bytes per float)
+    - nb = number of blocks per MPI process
+    - k = target k value (radix for k-ary reduction)
+    - op = the reduction operator can be 0 or 1 for no-op or image composition, respectively
 
 ```
 ./MERGE_TEST
@@ -140,11 +142,11 @@ The reduction operator used in this swap reduction is the noncommutative ``over'
 
 Edit the run script SWAP_TEST for the desired parameters:
 
-- min procs, max procs = minimum and maximum number of MPI processes
-- min elems, max elems = minimum and maximum number of elements to reduce. Each element is one floating point value (* 4 bytes per float)
-- nb = number of blocks per MPI process
-- k = target k value (radix for k-ary reduction)
-- op = the reduction operator can be 0 or 1 for no-op or image composition, respectively
+    - min procs, max procs = minimum and maximum number of MPI processes
+    - min elems, max elems = minimum and maximum number of elements to reduce. Each element is one floating point value (* 4 bytes per float)
+    - nb = number of blocks per MPI process
+    - k = target k value (radix for k-ary reduction)
+    - op = the reduction operator can be 0 or 1 for no-op or image composition, respectively
 
 ```
 ./SWAP_TEST
@@ -158,15 +160,15 @@ cd path/to/cian2/install/communication/alltoall
 
 When the reduction operator is 0 (no-op), this alltoall pattern matches MPI's (which does not have a built in reduction operator). Data are exchanged between processes and transposed in units of the current number of elements in the test. (See any MPI textbook for the alltoall data exchange pattern.)
 
-When the reduction operator is 1, the reduction is the same as for swap reduction above: the noncommutative ``over'' operator used in image composition. For every pair of four elements (e.g., the RGBA channels of a pixel), the first three elements are modulated by the value of the fourth element and added in a predetermined order. Results and performance are comparable with the swap-reduction above, when running a noncontiguous (distance-halving) mode. (This mode is set inside the swap-reduce code, setting ```true``` to ```false``` in the 7th argument to DiySwap in line 283 of swap.cpp.)
+When the reduction operator is 1, the reduction is the same as for swap reduction above: the noncommutative ''over'' operator used in image composition. For every pair of four elements (e.g., the RGBA channels of a pixel), the first three elements are modulated by the value of the fourth element and added in a predetermined order. Results and performance are comparable with the swap-reduction above, when running a noncontiguous (distance-halving) mode. (This mode is set inside the swap-reduce code, setting ```true``` to ```false``` in the 7th argument to DiySwap in line 283 of swap.cpp.)
 
 Edit the run script ALLTOALL_TEST for the desired parameters:
 
-- min procs, max procs = minimum and maximum number of MPI processes
-- min elems, max elems = minimum and maximum number of elements to reduce. Each element is one floating point value (* 4 bytes per float)
-- nb = number of blocks per MPI process
-- k = target k value (radix for k-ary reduction)
-- op = the reduction operator can be 0 or 1 for no-op or image composition, respectively
+    - min procs, max procs = minimum and maximum number of MPI processes
+    - min elems, max elems = minimum and maximum number of elements to reduce. Each element is one floating point value (* 4 bytes per float)
+    - nb = number of blocks per MPI process
+    - k = target k value (radix for k-ary reduction)
+    - op = the reduction operator can be 0 or 1 for no-op or image composition, respectively
 
 - Sort
 
@@ -176,13 +178,26 @@ cd path/to/cian2/install/communication/sort
 
 Edit the run script SORT_TEST for the desired parameters:
 
-- min procs, max procs = minimum and maximum number of MPI processes
-- min elems, max elems = minimum and maximum number of elements to sort. Each element is one integer (* 4 bytes per int) randomly assigned in the range minimum to maximum values of a signed integer
-- nb = number of blocks per MPI process
-- k = target k value (radix for k-ary reduction)
-- ns = number of samples per block for the sample sort
-- h = number of histogram bins per block for the histogram sort
+    - min procs, max procs = minimum and maximum number of MPI processes
+    - min elems, max elems = minimum and maximum number of elements to sort. Each element is one integer (* 4 bytes per int) randomly assigned in the range minimum to maximum values of a signed integer
+    - nb = number of blocks per MPI process
+    - k = target k value (radix for k-ary reduction)
+    - ns = number of samples per block for the sample sort
+    - h = number of histogram bins per block for the histogram sort
 
 ```
 ./SORT_TEST
 ```
+
+### I/O
+
+```
+cd path/to/cian2/install/io
+```
+Tests DIY2's block-based parallel I/O (both writing and reading) over MPI-IO.
+
+Edit the run script IO_TEST for the desired parameters:
+
+    - min procs, max procs = minimum and maximum number of MPI processes
+    - min elems, max elems = minimum and maximum number of elements per block. Each element is one floating point value (4 bytes per float). In addition to the data values, each block also contains one integer (4 bytes) containing the block global ID and one long integer (size_t, 8 bytes) containing the number of elements.
+    - nb = number of blocks per MPI process

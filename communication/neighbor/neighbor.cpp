@@ -23,7 +23,7 @@
 #include <diy/serialization.hpp>
 #include <diy/decomposition.hpp>
 
-#include "../include/opts.h"
+#include "../../include/opts.h"
 
 using namespace std;
 
