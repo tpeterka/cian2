@@ -279,7 +279,10 @@ int main(int argc, char **argv)
                                               num_threads,
                                               mem_blocks,
                                               &Block::create,
-                                              &Block::destroy);
+                                              &Block::destroy,
+                                              &storage,
+                                              &Block::save,
+                                              &Block::load);
         diy::ContiguousAssigner   write_assigner(world.size(),
                                                  tot_blocks);
         diy::ContiguousAssigner   read_assigner(world.size(),
@@ -306,22 +309,14 @@ int main(int argc, char **argv)
             // write the data
             MPI_Barrier(comm);
             t0 = MPI_Wtime();
-            diy::io::write_blocks("buf", world, write_master);
+            diy::io::write_blocks(buf, world, write_master);
             MPI_Barrier(comm);
             write_time[run] = MPI_Wtime() - t0;
 
             // read the data
             MPI_Barrier(comm);
             t0 = MPI_Wtime();
-            // TODO: should not need to specify the load function?
-            // read_blocks has a default value for the load function, and
-            // I would like the load function to come from read_master and omit the last arg.
-            // but this causes a valgrind error and crash
-#if 0
             diy::io::read_blocks(buf, world, read_assigner, read_master);
-#else
-            diy::io::read_blocks("buf", world, read_assigner, read_master, &Block::load);
-#endif
             MPI_Barrier(comm);
             read_time[run] = MPI_Wtime() - t0;
 
