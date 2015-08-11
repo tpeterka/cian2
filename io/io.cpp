@@ -125,12 +125,13 @@ void PrintBlock(void* b_, const diy::Master::ProxyWithLink& cp, void*)
 //
 // print results
 //
-// write_time, read_time: times
+// time: time
+// tot_b: total number of blocks
 // min_procs, max_procs: process range
 // min_elems, max_elems: data range
 //
-void PrintResults(double *write_time,
-                  double *read_time,
+void PrintResults(double *time,
+                  int tot_b,
                   int min_procs,
                   int max_procs,
                   int min_elems,
@@ -139,6 +140,7 @@ void PrintResults(double *write_time,
     int elem_iter = 0;                                            // element iteration number
     int num_elem_iters = (int)(log2(max_elems / min_elems) + 1);  // number of element iterations
     int proc_iter = 0;                                            // process iteration number
+    float gb = 1073741824.0f;                                     // 1 GB
 
     fprintf(stderr, "----- Timing Results -----\n");
 
@@ -148,7 +150,7 @@ void PrintResults(double *write_time,
     {
         fprintf(stderr, "\n# num_elemnts = %d   size @ 4 bytes / element = %d KB\n",
                 num_elems, num_elems * 4 / 1024);
-        fprintf(stderr, "# procs \t write_time \t read_time\n");
+        fprintf(stderr, "# procs \t time(s) \t bw(GB/s)\n");
 
         // iterate over processes
         int groupsize = min_procs;
@@ -157,7 +159,7 @@ void PrintResults(double *write_time,
         {
             int i = proc_iter * num_elem_iters + elem_iter; // index into times
             fprintf(stderr, "%d \t\t %.3lf \t\t %.3lf\n",
-                    groupsize, write_time[i], read_time[i]);
+                    groupsize, time[i], (float)num_elems * 4.0f * (float)tot_b / gb / time[i]);
 
             groupsize *= 2; // double the number of processes every time
             proc_iter++;
@@ -179,14 +181,21 @@ void PrintResults(double *write_time,
 // max_elems: maximum number of elements to reduce (output)
 // nb: number of blocks per process (output)
 // target_k: target k-value (output)
-// op: whether to run to operator or no op
+// write: write (true) or read (false)
 //
-void GetArgs(int argc, char **argv, int &min_procs, int &min_elems, int &max_elems, int &nb)
+void GetArgs(int argc,
+             char **argv,
+             int &min_procs,
+             int &min_elems,
+             int &max_elems,
+             int &nb,
+             bool &write)
 {
     using namespace opts;
     Options ops(argc, argv);
     int max_procs;
     int rank;
+    char op;                                 // w or r (write or read)
     MPI_Comm_size(MPI_COMM_WORLD, &max_procs);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
@@ -194,7 +203,8 @@ void GetArgs(int argc, char **argv, int &min_procs, int &min_elems, int &max_ele
         !(ops >> PosOption(min_procs)
           >> PosOption(min_elems)
           >> PosOption(max_elems)
-          >> PosOption(nb)))
+          >> PosOption(nb)
+          >> PosOption(op)))
     {
         if (rank == 0)
             fprintf(stderr, "Usage: %s min_procs min_elems max_elems nb\n", argv[0]);
@@ -202,11 +212,18 @@ void GetArgs(int argc, char **argv, int &min_procs, int &min_elems, int &max_ele
     }
 
     // check there is at least one element per block
-    assert(min_elems >= nb * max_procs);
+    if (min_elems < nb * max_procs && rank == 0)
+    {
+        fprintf(stderr, "Error: minimum number of elements must be >= maximum number of blocks "
+                " so that there is at least one element per block\n");
+        exit(1);
+    }
+
+    write = (op == 'w' || op == 'W') ? true : false;
 
     if (rank == 0)
-        fprintf(stderr, "min_procs = %d min_elems = %d max_elems = %d nb = %d\n",
-                min_procs, min_elems, max_elems, nb);
+        fprintf(stderr, "min_procs = %d min_elems = %d max_elems = %d nb = %d write = %d\n",
+                min_procs, min_elems, max_elems, nb, write);
 }
 
 //
@@ -224,11 +241,12 @@ int main(int argc, char **argv)
     int max_procs;            // maximum number of processes (groupsize of MPI_COMM_WORLD)
     double t0;                // start time
     char buf[256];            // filename
+    bool write;               // write or read
 
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &max_procs);
 
-    GetArgs(argc, argv, min_procs, min_elems, max_elems, nblocks);
+    GetArgs(argc, argv, min_procs, min_elems, max_elems, nblocks, write);
 
     // data extents, unused
     Bounds domain;
@@ -241,9 +259,7 @@ int main(int argc, char **argv)
     int num_runs = (int)((log2(max_procs / min_procs) + 1) *
                          (log2(max_elems / min_elems) + 1));
 
-    // timing
-    double write_time[num_runs];
-    double read_time[num_runs];
+    double io_time[num_runs];                // timing
 
     // iterate over processes
     int run = 0; // run number
@@ -267,38 +283,33 @@ int main(int argc, char **argv)
         int num_threads = 1; // needed in order to do timing
         diy::mpi::communicator    world(comm);
         diy::FileStorage          storage("./DIY.XXXXXX");
-        diy::Master               write_master(world,
-                                               num_threads,
-                                               mem_blocks,
-                                               &Block::create,
-                                               &Block::destroy,
-                                               &storage,
-                                               &Block::save,
-                                               &Block::load);
-        diy::Master               read_master(world,
-                                              num_threads,
-                                              mem_blocks,
-                                              &Block::create,
-                                              &Block::destroy,
-                                              &storage,
-                                              &Block::save,
-                                              &Block::load);
-        diy::ContiguousAssigner   write_assigner(world.size(),
-                                                 tot_blocks);
-        diy::ContiguousAssigner   read_assigner(world.size(),
-                                                -1);     // number of blocks set by read_blocks()
-        AddBlock                  create(write_master);
-        diy::decompose(dim, world.rank(), domain, write_assigner, create);
+        diy::Master               master(world,
+                                         num_threads,
+                                         mem_blocks,
+                                         &Block::create,
+                                         &Block::destroy,
+                                         &storage,
+                                         &Block::save,
+                                         &Block::load);
+        diy::ContiguousAssigner   *assigner;
+        if (write)
+        {
+            assigner = new diy::ContiguousAssigner(world.size(), tot_blocks);
+            AddBlock                  create(master);
+            diy::decompose(dim, world.rank(), domain, *assigner, create);
+        }
+        else // number of blocks set by read_blocks()
+            assigner = new diy::ContiguousAssigner(world.size(), -1);
 
         // iterate over number of elements
         num_elems = min_elems;
         while (num_elems <= max_elems)
         {
             // initialize input data
-            write_master.foreach(&ResetBlock, &num_elems);
+            master.foreach(&ResetBlock, &num_elems);
 
             // debug
-//             write_master.foreach(&PrintBlock);
+//             master.foreach(&PrintBlock);
 
             // name the file by the run number
             // rank 0 has the correct run numbering because it participated in all groups, so
@@ -307,21 +318,27 @@ int main(int argc, char **argv)
             sprintf(buf, "%d.out", run);
 
             // write the data
-            MPI_Barrier(comm);
-            t0 = MPI_Wtime();
-            diy::io::write_blocks(buf, world, write_master);
-            MPI_Barrier(comm);
-            write_time[run] = MPI_Wtime() - t0;
+            if (write)
+            {
+                MPI_Barrier(comm);
+                t0 = MPI_Wtime();
+                diy::io::write_blocks(buf, world, master);
+                MPI_Barrier(comm);
+                io_time[run] = MPI_Wtime() - t0;
+            }
 
             // read the data
-            MPI_Barrier(comm);
-            t0 = MPI_Wtime();
-            diy::io::read_blocks(buf, world, read_assigner, read_master);
-            MPI_Barrier(comm);
-            read_time[run] = MPI_Wtime() - t0;
+            else
+            {
+                MPI_Barrier(comm);
+                t0 = MPI_Wtime();
+                diy::io::read_blocks(buf, world, *assigner, master);
+                MPI_Barrier(comm);
+                io_time[run] = MPI_Wtime() - t0;
+            }
 
             // debug
-//             read_master.foreach(&PrintBlock);
+//             master.foreach(&PrintBlock);
 
             num_elems *= 2; // double the number of elements every time
             run++;
@@ -329,6 +346,7 @@ int main(int argc, char **argv)
         } // elem iteration
 
         groupsize *= 2; // double the number of processes every time
+        delete assigner;
         MPI_Comm_free(&comm);
 
     } // proc iteration
@@ -337,7 +355,7 @@ int main(int argc, char **argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     fflush(stderr);
     if (rank == 0)
-        PrintResults(write_time, read_time, min_procs, max_procs, min_elems, max_elems);
+        PrintResults(io_time, tot_blocks, min_procs, max_procs, min_elems, max_elems);
 
     // cleanup
     MPI_Finalize();

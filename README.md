@@ -191,10 +191,13 @@ Edit the run script SORT_TEST for the desired parameters:
 ```
 cd path/to/cian2/install/io
 ```
-Tests DIY2's block-based parallel I/O (both writing and reading) over MPI-IO.
+Tests DIY2's block-based parallel I/O (writing or reading) implemented using MPI-IO.
 
 Edit the run script IO_TEST for the desired parameters:
 
 - min procs, max procs = minimum and maximum number of MPI processes
 - min elems, max elems = minimum and maximum number of elements per block. Each element is one floating point value (4 bytes per float). In addition to the data values, each block also contains one integer (4 bytes) containing the block global ID and one long integer (size_t, 8 bytes) containing the number of elements.
 - nb = number of blocks per MPI process
+- op = w or r for writing or reading
+
+Note: Use the same parameters (min_procs, max_procs, min_elems, max_elems, nb) for reading as for writing, and run the reading test (```op=r```) after the writing (```op=w```). The reason is that file names for each combination of parameters are automatically generated, and you want the reader to find the same files, named the same way, that the writer created. Files are not deleted automatically, meaning you can exceed disk storage quotas if you are not careful. Files are named *.out, where * is the run number corresponding to a combination of parameters (num_procs, num_elems).

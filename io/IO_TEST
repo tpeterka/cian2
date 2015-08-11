@@ -47,11 +47,14 @@ max_elems=$[8 * $K]
 # number of blocks per process
 nb=1
 
+# operation (w or r)
+op=r
+
 #------
 #
 # program arguments
 #
-args="$min_procs $min_elems $max_elems $nb"
+args="$min_procs $min_elems $max_elems $nb $op"
 
 #------
 #
