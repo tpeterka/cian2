@@ -41,8 +41,8 @@ exe=./alltoall
 # number of elements to reduce
 K=1024
 M=1048576
-min_elems=$[1 * 1 * $K]
-max_elems=$[8 * 1 * $K]
+min_elems=$[1 * $K]
+max_elems=$[8 * $K]
 
 # number of blocks per process
 nb=1
@@ -50,10 +50,6 @@ nb=1
 # target k-value
 k=2
 
-# op=1: normal, op=0: no op (empty reduce computation)
-# use op=1 to compare with noncotiguous swap-reduce
-# use op=0 to copmare with mpi
-op=0
 #------
 #
 # program arguments
