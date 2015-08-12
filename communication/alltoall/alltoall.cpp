@@ -57,10 +57,8 @@ struct Block
 
     std::vector<float> data;
     int    gid;
-    int    sub_start; // starting index of subset of the total data that this block owns
-    int    sub_size;  // number of elements in the subset of the total data that this block owns
-    size_t size;   // total number of elements
-    int    tot_b;
+    size_t size;   // total number of elements per block
+    int tot_b;     // total number of blocks
 };
 
 //
@@ -95,8 +93,6 @@ void ResetBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* args)
     int num_elems = *(int*)args;
     int tot_blocks = *((int*)args + 1);
     b->generate_data(num_elems, tot_blocks);
-    b->sub_start = 0;
-    b->sub_size = num_elems;
 }
 
 //
@@ -117,9 +113,6 @@ void CheckBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* rs_)
     Block* b   = static_cast<Block*>(b_);
     float* rs = static_cast<float*>(rs_);
 
-    if (b->sub_size != b->size / b->tot_b)
-        fprintf(stderr, "Warning: wrong number of elements in %d: %d\n", b->gid, b->sub_size);
-
     for (int i = 0; i < b->size; i++)
     {
         if (b->data[i] != rs[i])
@@ -138,7 +131,6 @@ void CheckBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* rs_)
 // in_data: input data
 // comm: current communicator
 // num_elems: current number of elements
-// op: run actual op or noop
 //
 void MpiAlltoAll(float* alltoall_data, double *mpi_time, int run,
                  float *in_data, MPI_Comm comm, int num_elems)
@@ -181,69 +173,27 @@ struct Exchange
     void operator()(void* b_, const diy::ReduceProxy& rp) const
         {
             Block* b = static_cast<Block*>(b_);
-            int sub_start;            // subset starting index
-            int sub_size;             // subset size
-
-            // find my position in the link
-            int mypos;
-            for (unsigned i = 0; i < rp.in_link().size(); ++i)
-            {
-                if (rp.in_link().target(i).gid == rp.gid())
-                    mypos = i;
-            }
-
-            // dequeue and reduce
-            int k = rp.in_link().size();
-
-            // compute my subset indices for the result
-            if (k)
-            {
-                b->sub_start += (mypos * b->sub_size / k);
-                if (mypos == k - 1) // last subset may be different size
-                    b->sub_size = b->sub_size - (mypos * b->sub_size / k);
-                else
-                    b->sub_size = b->sub_size / k;
-            }
-
-            for (unsigned i = 0; i < k; ++i)
-            {
-                if (rp.in_link().target(i).gid == rp.gid())
-                    continue;
-
-                // to compare with mpi alltoall, overwrite the current data with received
-                int s = i * b->sub_size;
-                float* in = (float*) &rp.incoming(rp.in_link().target(i).gid).buffer[0];
-                for (int j = 0; j < b->sub_size; j++)
-                    b->data[s + j] = in[j];
-            }
-
-            if (!rp.out_link().size())
-                return;
 
             // enqueue
-            k = rp.out_link().size();
-            for (unsigned i = 0; i < k; i++)
+            int sz = 0;                       // current location in b-> from which to read
+            for (unsigned i = 0; i < rp.out_link().size(); i++)
             {
-                // temp versions of sub_start and sub_size are for sending
-                // final versions stored in the block are updated upon receiving (above)
-                sub_start = b->sub_start + (i * b->sub_size / k);
-                if (i == k - 1) // last subset may be different size
-                    sub_size = b->sub_size - (i * b->sub_size / k);
-                else
-                    sub_size = b->sub_size / k;
-                //printf("[%d]: round %d enqueueing %d\n", rp.gid(), rp.round(), sub_size);
-                rp.enqueue(rp.out_link().target(i), &b->data[sub_start], sub_size);
+                rp.enqueue(rp.out_link().target(i), &b->data[sz], b->size / b->tot_b);
+                sz += (b->size / b->tot_b);
             }
 
-            // update sub_start and sub_size inside the block
-            if (rp.in_link().size() == 0)
-                return;
-
-            b->sub_start = b->sub_start + (mypos * b->sub_size / k);
-            if (mypos == k - 1)
-                b->sub_size = b->sub_size - ((k-1) * b->sub_size / k);
-            else
-                b->sub_size = b->sub_size/k;
+            // dequeue
+            sz = 0;                          // current location in b->data into which to write
+            for (unsigned i = 0; i < rp.in_link().size(); ++i)
+            {
+                int gid = rp.in_link().target(i).gid;
+                diy::MemoryBuffer& incoming = rp.incoming(gid);
+                size_t incoming_sz  = incoming.size() / sizeof(float);
+                std::copy((float*) &incoming.buffer[0],
+                          (float*) &incoming.buffer[0] + incoming_sz,
+                          &b->data[sz]);
+                sz += incoming_sz;
+            }
         }
 
     const Decomposer& decomposer;
@@ -374,7 +324,6 @@ int main(int argc, char **argv)
     int rank, groupsize;      // MPI usual
     int min_procs;            // minimum number of processes
     int max_procs;            // maximum number of processes (groupsize of MPI_COMM_WORLD)
-    bool op;                  // actual operator or no-op
 
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &max_procs);
@@ -444,11 +393,11 @@ int main(int argc, char **argv)
                 MpiAlltoAll(alltoall_data, mpi_time, run, in_data, comm, num_elems);
 
             // DIY swap
+
             // initialize input data
             int args[2];
             args[0] = num_elems;
             args[1] = tot_blocks;
-
             master.foreach(&ResetBlock, args);
 
             DiyAlltoAll(diy_time, run, target_k, comm, master, assigner, decomposer);
