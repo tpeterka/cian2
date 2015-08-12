@@ -1,4 +1,5 @@
 add_executable              (neighbor neighbor.cpp)
+target_link_libraries       (neighbor ${libraries})
 
 install(TARGETS neighbor
         DESTINATION ${CMAKE_INSTALL_PREFIX}/communication/neighbor/

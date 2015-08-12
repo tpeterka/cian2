@@ -1,4 +1,5 @@
 add_executable              (sort sort.cpp)
+target_link_libraries       (sort ${libraries})
 
 install(TARGETS sort
         DESTINATION ${CMAKE_INSTALL_PREFIX}/communication/sort/
