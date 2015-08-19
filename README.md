@@ -158,7 +158,7 @@ Edit the run script SWAP_TEST for the desired parameters:
 cd path/to/cian2/install/communication/alltoall
 ```
 
-This alltoall test uses an exchange operator that matches MPI's all to all behavior. Data are exchanged between processes and transposed in units of the current number of elements in the test. (See any MPI textbook for the alltoall data exchange pattern.) Internally, the pattern is implemented with a k-ary swap-reduce, hence the need to specify the target k value.
+This alltoall test uses an exchange operator that matches MPI's all to all behavior. Data are exchanged between processes and transposed in units of the current number of elements in the test. (See any MPI textbook for the alltoall data exchange pattern.) Internally, the pattern is implemented with a k-ary swap-reduce, hence the need to specify the target k value. In this test, all the blocks are the same size, but DIY does not require this to be the case. Hence, the DIY perfomance is compared to both MPI all_to_all and all_to_allv. In the future, we may actually make different block sizes to confirm the all_to_allv comparison.
 
 Edit the run script ALLTOALL_TEST for the desired parameters:
 

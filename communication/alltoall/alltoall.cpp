@@ -123,17 +123,15 @@ void CheckBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* rs_)
 }
 
 //
-// MPI all to all
+// MPI all_to_all and all_to_allv
 //
-// alltoall_data: data values
-// mpi_time: time (output)
-// run: run number
-// in_data: input data
-// comm: current communicator
-// num_elems: current number of elements
-//
-void MpiAlltoAll(float* alltoall_data, double *mpi_time, int run,
-                 float *in_data, MPI_Comm comm, int num_elems)
+void MpiAlltoAll(float    *alltoall_data,    // data values
+                 double   *mpi_allall_time,  // time (output) for all_to_all
+                 double   *mpi_allallv_time, // time (output) for all_to_allv
+                 int      run,               // run number
+                 float    *in_data,          // input data
+                 MPI_Comm comm,              // current communicator
+                 int      num_elems)         // current number of elements per block
 {
     // init
     int rank;
@@ -147,15 +145,40 @@ void MpiAlltoAll(float* alltoall_data, double *mpi_time, int run,
 //         fprintf(stderr, "mpi rank %d indata[%d] = %.1f\n", rank, i, in_data[i]);
     }
 
-    // reduce
+    // reduce using alltoall
+    // count is same for all processes
+    // just num_elems / groupsize, dropping any remainder
     MPI_Barrier(comm);
     double t0 = MPI_Wtime();
-    // count is same for all processes (alltoall, not alltoallv)
-    // just num_elems / groupsize, dropping any remainder
     MPI_Alltoall((void *)in_data, num_elems / groupsize, MPI_FLOAT,
                  (void *)alltoall_data, num_elems / groupsize, MPI_FLOAT, comm);
     MPI_Barrier(comm);
-    mpi_time[run] = MPI_Wtime() - t0;
+    mpi_allall_time[run] = MPI_Wtime() - t0;
+
+    // reduce using alltoallv
+    // even though count is actually same for all processes, this is how long it would take
+    // if the count were different
+    int* send_counts = new int[groupsize];
+    int* send_displs = new int[groupsize];
+    int* recv_counts = new int[groupsize];
+    int* recv_displs = new int[groupsize];
+    for (int i = 0; i < groupsize; i++)
+    {
+        send_counts[i] = num_elems / groupsize;
+        send_displs[i] = (i == 0) ? 0 : send_displs[i - 1] + send_counts[i - 1];
+        recv_counts[i] = num_elems / groupsize;
+        recv_displs[i] = (i == 0) ? 0 : recv_displs[i - 1] + recv_counts[i - 1];
+    }
+    MPI_Barrier(comm);
+    t0 = MPI_Wtime();
+    MPI_Alltoallv((void *)in_data, send_counts, send_displs, MPI_FLOAT,
+                  (void *)alltoall_data, recv_counts, recv_displs, MPI_FLOAT, comm);
+    MPI_Barrier(comm);
+    mpi_allallv_time[run] = MPI_Wtime() - t0;
+    delete[] send_counts;
+    delete[] send_displs;
+    delete[] recv_counts;
+    delete[] recv_displs;
 
     // debug: print the mpi data
 //       for (int i = 0; i < num_elems; i++)
@@ -224,12 +247,13 @@ void DiyAlltoAll(double *diy_time, int run, int k, MPI_Comm comm, diy::Master& m
 //
 // print results
 //
-// mpi_time, diy_time: times
-// min_procs, max_procs: process range
-// min_elems, max_elems: data range
-//
-void PrintResults(double *mpi_time, double *diy_time, int min_procs,
-		  int max_procs, int min_elems, int max_elems)
+void PrintResults(double *mpi_allall_time,   // mpi all_to_all time
+                  double *mpi_allallv_time,  // mpi all_to_allv time
+                  double *diy_time,          // diy time
+                  int    min_procs,          // minimum number of processes
+		  int    max_procs,          // maximum number of processes
+                  int    min_elems,          // minimum number of elements
+                  int    max_elems)          // maximum number of elements
 {
     int elem_iter = 0;                                            // element iteration number
     int num_elem_iters = (int)(log2(max_elems / min_elems) + 1);  // number of element iterations
@@ -243,7 +267,7 @@ void PrintResults(double *mpi_time, double *diy_time, int min_procs,
     {
         fprintf(stderr, "\n# num_elemnts = %d   size @ 4 bytes / element = %d KB\n",
                 num_elems, num_elems * 4 / 1024);
-        fprintf(stderr, "# procs \t mpi_time \t diy_time\n");
+        fprintf(stderr, "# procs \t mpi_allall_time \t mpi_allallv_time \t diy_time\n");
 
         // iterate over processes
         int groupsize = min_procs;
@@ -251,8 +275,8 @@ void PrintResults(double *mpi_time, double *diy_time, int min_procs,
         while (groupsize <= max_procs)
         {
             int i = proc_iter * num_elem_iters + elem_iter; // index into times
-            fprintf(stderr, "%d \t\t %.3lf \t\t %.3lf\n",
-                    groupsize, mpi_time[i], diy_time[i]);
+            fprintf(stderr, "%d \t\t %.3lf \t\t\t %.3lf \t\t\t %.3lf\n",
+                    groupsize, mpi_allall_time[i], mpi_allallv_time[i], diy_time[i]);
 
             groupsize *= 2; // double the number of processes every time
             proc_iter++;
@@ -342,7 +366,8 @@ int main(int argc, char **argv)
                          (log2(max_elems / min_elems) + 1));
 
     // timing
-    double mpi_time[num_runs];
+    double mpi_allall_time[num_runs];
+    double mpi_allallv_time[num_runs];
     double diy_time[num_runs];
 
     // data for MPI reduce, only for one local block
@@ -390,17 +415,28 @@ int main(int argc, char **argv)
         {
             // MPI alltoall, only for one block per process
             if (tot_blocks == groupsize)
-                MpiAlltoAll(alltoall_data, mpi_time, run, in_data, comm, num_elems);
+                MpiAlltoAll(alltoall_data,
+                            mpi_allall_time,
+                            mpi_allallv_time,
+                            run,
+                            in_data,
+                            comm,
+                            num_elems);
 
-            // DIY swap
-
-            // initialize input data
+            // initialize DIY input data
             int args[2];
             args[0] = num_elems;
             args[1] = tot_blocks;
             master.foreach(&ResetBlock, args);
 
-            DiyAlltoAll(diy_time, run, target_k, comm, master, assigner, decomposer);
+            // DIY alltoall
+            DiyAlltoAll(diy_time,
+                        run,
+                        target_k,
+                        comm,
+                        master,
+                        assigner,
+                        decomposer);
 
             // debug
 //             master.foreach(&PrintBlock);
@@ -420,7 +456,13 @@ int main(int argc, char **argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     fflush(stderr);
     if (rank == 0)
-        PrintResults(mpi_time, diy_time, min_procs, max_procs, min_elems, max_elems);
+        PrintResults(mpi_allall_time,
+                     mpi_allallv_time,
+                     diy_time,
+                     min_procs,
+                     max_procs,
+                     min_elems,
+                     max_elems);
 
     // cleanup
     delete[] in_data;
