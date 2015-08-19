@@ -73,8 +73,12 @@ set			    (libraries
                              ${HDF5_LIBRARY}
                              ${MOAB_LIBRARY}
                              ${MB_COUPLER_LIBRARY}
-                             ${ZLIB_LIBRARIES}
                              ${CMAKE_THREAD_LIBS_INIT})
+if                          (HDF5_LIBRARY AND MOAB_LIBRARY AND MB_COUPLER_LIBRARY)
+set			    (libraries
+                             ${libraries}
+                             ${ZLIB_LIBRARIES})
+endif                       ()
 
 # Subdirectories
 if                          (HDF5_INCLUDE_DIRS AND MOAB_INCLUDE_DIRS AND DIY_INCLUDE_DIRS AND
