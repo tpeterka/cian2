@@ -1,4 +1,5 @@
 add_executable              (merge merge.cpp)
+target_link_libraries       (merge ${libraries})
 
 install(TARGETS merge
         DESTINATION ${CMAKE_INSTALL_PREFIX}/communication/merge/

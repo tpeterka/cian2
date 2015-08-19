@@ -1,4 +1,5 @@
 add_executable              (alltoall alltoall.cpp)
+target_link_libraries       (alltoall ${libraries})
 
 install(TARGETS alltoall
         DESTINATION ${CMAKE_INSTALL_PREFIX}/communication/alltoall/

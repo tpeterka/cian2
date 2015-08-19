@@ -1,4 +1,5 @@
 add_executable              (swap swap.cpp)
+target_link_libraries       (swap ${libraries})
 
 install(TARGETS swap
         DESTINATION ${CMAKE_INSTALL_PREFIX}/communication/swap/
