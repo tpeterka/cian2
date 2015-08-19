@@ -1,4 +1,5 @@
 add_executable              (io io.cpp)
+target_link_libraries       (io ${libraries})
 
 install(TARGETS io
         DESTINATION ${CMAKE_INSTALL_PREFIX}/io/
