@@ -406,8 +406,8 @@ int main(int argc, char **argv)
                                          &Block::load);
         diy::ContiguousAssigner   assigner(world.size(), tot_blocks);
         AddBlock                  create(master);
-        Decomposer    decomposer(dim, domain, assigner);
-        decomposer.decompose(world.rank(), create);
+        Decomposer                decomposer(dim, domain, assigner.nblocks());
+        decomposer.decompose(world.rank(), assigner, create);
 
         // iterate over number of elements
         num_elems = min_elems;

@@ -127,8 +127,9 @@ struct SortPartners
     typedef       std::pair<bool, int>            RoundType;
 
     SortPartners(int nblocks, int k):
-        histogram(1, nblocks, k),
-        exchange(1, nblocks, k, false)
+        decomposer(1, diy::interval(0,nblocks-1), nblocks),
+        histogram(decomposer, k),
+        exchange(decomposer, k, false)
         {
             for (unsigned i = 0; i < exchange.rounds(); ++i)
             {
@@ -147,10 +148,13 @@ struct SortPartners
 
     inline bool   active(int round, int gid, const diy::Master& master) const { return true; }
 
-    inline void   incoming(int round, int gid, std::vector<int>& partners, const diy::Master& master)
+    inline void   incoming(int round,
+                           int gid,
+                           std::vector<int>& partners,
+                           const diy::Master& master)
         const
         {
-            if (round == rounds())
+            if (round == (int)rounds())
                 exchange.incoming(sub_round(round-1) + 1, gid, partners, master);
             else if (exchange_round(round))     // round != 0
                 histogram.incoming(sub_round(round-1) + 1, gid, partners, master);
@@ -163,7 +167,10 @@ struct SortPartners
             }
         }
 
-    inline void   outgoing(int round, int gid, std::vector<int>& partners, const diy::Master& master)
+    inline void   outgoing(int round,
+                           int gid,
+                           std::vector<int>& partners,
+                           const diy::Master& master)
         const
         {
             if (exchange_round(round))
@@ -172,9 +179,10 @@ struct SortPartners
                 histogram.outgoing(sub_round(round), gid, partners, master);
         }
 
-    diy::RegularSwapPartners          histogram;
-    diy::RegularSwapPartners          exchange;
-    std::vector<RoundType>            rounds_;
+    diy::RegularDecomposer<diy::DiscreteBounds> decomposer;
+    diy::RegularSwapPartners                    histogram;
+    diy::RegularSwapPartners                    exchange;
+    std::vector<RoundType>                      rounds_;
 };
 
 

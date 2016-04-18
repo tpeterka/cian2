@@ -27,24 +27,25 @@
 
 using namespace std;
 
-typedef  diy::ContinuousBounds       Bounds;
-typedef  diy::RegularContinuousLink  RCLink;
+typedef  diy::ContinuousBounds          Bounds;
+typedef  diy::RegularContinuousLink     RCLink;
+typedef  diy::RegularDecomposer<Bounds> Decomposer;
 
 // function prototypes
-void GetArgs(int argc, char **argv, int &min_procs, int &min_elems,
-	     int &max_elems, int &nb, int &target_k, bool &op);
-void MpiReduceScatter(float* reduce_scatter_data, double *reduce_scatter_time, int run,
-                      float *in_data, MPI_Comm comm,
-                      int num_elems, bool op);
-void DiySwap(double *swap_time, int run, int k, MPI_Comm comm, int dim, int totblocks,
-             bool contiguous, diy::Master& master, diy::ContiguousAssigner& assigner, bool op);
-void PrintResults(double *reduce_scatter_time, double *swap_time, int min_procs,
-		  int max_procs, int min_elems, int max_elems);
+// void GetArgs(int argc, char **argv, int &min_procs, int &min_elems,
+// 	     int &max_elems, int &nb, int &target_k, bool &op);
+// void MpiReduceScatter(float* reduce_scatter_data, double *reduce_scatter_time, int run,
+//                       float *in_data, MPI_Comm comm,
+//                       int num_elems, bool op);
+// void DiySwap(double *swap_time, int run, int k, MPI_Comm comm, int dim, int totblocks,
+//              bool contiguous, diy::Master& master, diy::ContiguousAssigner& assigner, bool op);
+// void PrintResults(double *reduce_scatter_time, double *swap_time, int min_procs,
+// 		  int max_procs, int min_elems, int max_elems);
 void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPartners&);
 void NoopSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPartners&);
 void Over(void *in, void *inout, int *len, MPI_Datatype*);
 void Noop(void*, void*, int*, MPI_Datatype*) {}
-void ResetBlock(void* b_, const diy::Master::ProxyWithLink& cp, void*);
+// void ResetBlock(void* b_, const diy::Master::ProxyWithLink& cp, void*);
 
 // block
 struct Block
@@ -190,126 +191,6 @@ void CheckBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* rs_)
     }
 }
 //
-// main
-//
-int main(int argc, char **argv)
-{
-    int dim = 1;              // number of dimensions in the problem
-    int nblocks;              // local number of blocks
-    int tot_blocks;           // total number of blocks
-    int target_k;             // target k-value
-    int min_elems, max_elems; // min, max number of elements per block
-    int num_elems;            // current number of data elements per block
-    int rank, groupsize;      // MPI usual
-    int min_procs;            // minimum number of processes
-    int max_procs;            // maximum number of processes (groupsize of MPI_COMM_WORLD)
-    bool op;                  // actual operator or no-op
-
-    MPI_Init(&argc, &argv);
-    MPI_Comm_size(MPI_COMM_WORLD, &max_procs);
-
-    GetArgs(argc, argv, min_procs, min_elems, max_elems, nblocks, target_k, op);
-
-    // data extents, unused
-    Bounds domain;
-    for(int i = 0; i < dim; i++)
-    {
-        domain.min[i] = 0.0;
-        domain.max[i] = 1.0;
-    }
-
-    int num_runs = (int)((log2(max_procs / min_procs) + 1) *
-                         (log2(max_elems / min_elems) + 1));
-
-    // timing
-    double reduce_scatter_time[num_runs];
-    double swap_time[num_runs];
-
-    // data for MPI reduce, only for one local block
-    float *in_data = new float[max_elems];
-    float *reduce_scatter_data = new float[max_elems];
-
-    // iterate over processes
-    int run = 0; // run number
-    groupsize = min_procs;
-    while (groupsize <= max_procs)
-    {
-        // form a new communicator
-        MPI_Comm comm;
-        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-        MPI_Comm_split(MPI_COMM_WORLD, (rank < groupsize), rank, &comm);
-        if (rank >= groupsize)
-        {
-            MPI_Comm_free(&comm);
-            groupsize *= 2;
-            continue;
-        }
-
-        // initialize DIY
-        tot_blocks = nblocks * groupsize;
-        int mem_blocks = -1; // everything in core for now
-        int num_threads = 1; // needed in order to do timing
-        diy::mpi::communicator    world(comm);
-        diy::FileStorage          storage("./DIY.XXXXXX");
-        diy::Master               master(world,
-                                         num_threads,
-                                         mem_blocks,
-                                         &Block::create,
-                                         &Block::destroy,
-                                         &storage,
-                                         &Block::save,
-                                         &Block::load);
-        diy::ContiguousAssigner   assigner(world.size(), tot_blocks);
-        AddBlock                  create(master);
-        diy::decompose(dim, world.rank(), domain, assigner, create);
-
-        // iterate over number of elements
-        num_elems = min_elems;
-        while (num_elems <= max_elems)
-        {
-            // MPI reduce-scatter, only for one block per process
-            if (tot_blocks == groupsize)
-                MpiReduceScatter(reduce_scatter_data, reduce_scatter_time, run, in_data, comm,
-                                 num_elems, op);
-
-            // DIY swap
-            // initialize input data
-            int args[2];
-            args[0] = num_elems;
-            args[1] = tot_blocks;
-
-            master.foreach(&ResetBlock, args);
-
-            DiySwap(swap_time, run, target_k, comm, dim, tot_blocks, true, master, assigner, op);
-
-            // debug
-            //       master.foreach(PrintBlock);
-            master.foreach(&CheckBlock, reduce_scatter_data);
-
-            num_elems *= 2; // double the number of elements every time
-            run++;
-
-        } // elem iteration
-
-        groupsize *= 2; // double the number of processes every time
-        MPI_Comm_free(&comm);
-
-    } // proc iteration
-
-    // print results
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    fflush(stderr);
-    if (rank == 0)
-        PrintResults(reduce_scatter_time, swap_time, min_procs, max_procs, min_elems, max_elems);
-
-    // cleanup
-    delete[] in_data;
-    delete[] reduce_scatter_data;
-    MPI_Finalize();
-
-    return 0;
-}
-//
 // MPI reduce scatter
 //
 // reduce_scatter_data: data values
@@ -452,24 +333,20 @@ void FinalSwapExchange(void* b_, const diy::ReduceProxy& proxy, const FinalSwapP
 //
 // DIY swap
 //
-// swap_time: time (output)
-// run: run number
-// k: desired k value
-// comm: MPI communicator
-// dim: dimensionality of decompostion
-// totblocks: total number of blocks
-// contiguous: use contiguous partners
-// master, assigner: diy usual
-// op: run actual op or noop
-//
-void DiySwap(double *swap_time, int run, int k, MPI_Comm comm, int dim, int totblocks,
-             bool contiguous, diy::Master& master, diy::ContiguousAssigner& assigner, bool op)
+void DiySwap(double *swap_time,                          // time (output)
+             int run,                                    // run number
+             int k,                                      // desired k value (reduction tree radix)
+             MPI_Comm comm,                              // MPI communicator
+             Decomposer& decomposer,                     // diy RegularDecomposer object
+             bool contiguous,                            // whether to use contiguous partners
+             diy::Master& master,                        // diy Master object
+             diy::ContiguousAssigner& assigner,          // diy Assigner object
+             bool op)                                    // run actual op or noop
 {
     MPI_Barrier(comm);
     double t0 = MPI_Wtime();
 
-    //printf("---- %d ----\n", totblocks);
-    diy::RegularSwapPartners  partners(dim, totblocks, k, contiguous);
+    diy::RegularSwapPartners  partners(decomposer, k, contiguous);
     if (op)
         diy::reduce(master, assigner, partners, &ComputeSwap);
     else
@@ -477,12 +354,11 @@ void DiySwap(double *swap_time, int run, int k, MPI_Comm comm, int dim, int totb
 
     if (contiguous)
     {
-        FinalSwapPartners final_swap_partners(totblocks, partners);
+        FinalSwapPartners final_swap_partners(assigner.nblocks(), partners);
         if (final_swap_partners.rounds() > 0)
             diy::reduce(master, assigner, final_swap_partners, &FinalSwapExchange);
     }
 
-    //printf("------------\n");
     MPI_Barrier(comm);
     swap_time[run] = MPI_Wtime() - t0;
 }
@@ -821,5 +697,126 @@ void GetArgs(int argc, char **argv, int &min_procs,
     if (rank == 0)
         fprintf(stderr, "min_procs = %d min_elems = %d max_elems = %d nb = %d "
                 "target_k = %d\n", min_procs, min_elems, max_elems, nb, target_k);
+}
+//
+// main
+//
+int main(int argc, char **argv)
+{
+    int dim = 1;              // number of dimensions in the problem
+    int nblocks;              // local number of blocks
+    int tot_blocks;           // total number of blocks
+    int target_k;             // target k-value
+    int min_elems, max_elems; // min, max number of elements per block
+    int num_elems;            // current number of data elements per block
+    int rank, groupsize;      // MPI usual
+    int min_procs;            // minimum number of processes
+    int max_procs;            // maximum number of processes (groupsize of MPI_COMM_WORLD)
+    bool op;                  // actual operator or no-op
+
+    MPI_Init(&argc, &argv);
+    MPI_Comm_size(MPI_COMM_WORLD, &max_procs);
+
+    GetArgs(argc, argv, min_procs, min_elems, max_elems, nblocks, target_k, op);
+
+    // data extents, unused
+    Bounds domain;
+    for(int i = 0; i < dim; i++)
+    {
+        domain.min[i] = 0.0;
+        domain.max[i] = 1.0;
+    }
+
+    int num_runs = (int)((log2(max_procs / min_procs) + 1) *
+                         (log2(max_elems / min_elems) + 1));
+
+    // timing
+    double reduce_scatter_time[num_runs];
+    double swap_time[num_runs];
+
+    // data for MPI reduce, only for one local block
+    float *in_data = new float[max_elems];
+    float *reduce_scatter_data = new float[max_elems];
+
+    // iterate over processes
+    int run = 0; // run number
+    groupsize = min_procs;
+    while (groupsize <= max_procs)
+    {
+        // form a new communicator
+        MPI_Comm comm;
+        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        MPI_Comm_split(MPI_COMM_WORLD, (rank < groupsize), rank, &comm);
+        if (rank >= groupsize)
+        {
+            MPI_Comm_free(&comm);
+            groupsize *= 2;
+            continue;
+        }
+
+        // initialize DIY
+        tot_blocks = nblocks * groupsize;
+        int mem_blocks = -1; // everything in core for now
+        int num_threads = 1; // needed in order to do timing
+        diy::mpi::communicator    world(comm);
+        diy::FileStorage          storage("./DIY.XXXXXX");
+        diy::Master               master(world,
+                                         num_threads,
+                                         mem_blocks,
+                                         &Block::create,
+                                         &Block::destroy,
+                                         &storage,
+                                         &Block::save,
+                                         &Block::load);
+        diy::ContiguousAssigner   assigner(world.size(), tot_blocks);
+        AddBlock                  create(master);
+        Decomposer                decomposer(dim, domain, assigner.nblocks());
+        decomposer.decompose(world.rank(), assigner, create);
+
+        // iterate over number of elements
+        num_elems = min_elems;
+        while (num_elems <= max_elems)
+        {
+            // MPI reduce-scatter, only for one block per process
+            if (tot_blocks == groupsize)
+                MpiReduceScatter(reduce_scatter_data, reduce_scatter_time, run, in_data, comm,
+                                 num_elems, op);
+
+            // DIY swap
+            // initialize input data
+            int args[2];
+            args[0] = num_elems;
+            args[1] = tot_blocks;
+
+            master.foreach(&ResetBlock, args);
+
+            DiySwap(swap_time, run, target_k, comm, decomposer, true, master, assigner, op);
+
+            // debug
+            //       master.foreach(PrintBlock);
+            master.foreach(&CheckBlock, reduce_scatter_data);
+
+            num_elems *= 2; // double the number of elements every time
+            run++;
+
+        } // elem iteration
+
+        groupsize *= 2; // double the number of processes every time
+        MPI_Comm_free(&comm);
+
+    } // proc iteration
+
+    // print results
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    fflush(stderr);
+    if (rank == 0)
+        PrintResults(reduce_scatter_time, swap_time, min_procs, max_procs, min_elems, max_elems);
+
+    // cleanup
+    delete[] in_data;
+    delete[] reduce_scatter_data;
+    MPI_Finalize();
+
+    return 0;
 }
 

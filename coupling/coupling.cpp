@@ -584,10 +584,20 @@ void PrepMeshes(int src_type,
     // the following calls to asssigners are for 1 block per process
     assigners[0] = new diy::RoundRobinAssigner(comms[0].size(), comms[0].size());
     assigners[1] = new diy::RoundRobinAssigner(comms[1].size(), comms[1].size());
-    decomps[0]   = new diy::RegularDecomposer<Bounds>(3, domain0, *(assigners[0]), share_face,
-                                                    wrap, ghost, given0);
-    decomps[1]   = new diy::RegularDecomposer<Bounds>(3, domain1, *(assigners[1]), share_face,
-                                                    wrap, ghost, given1);
+    decomps[0]   = new diy::RegularDecomposer<Bounds>(3,
+                                                      domain0,
+                                                      assigners[0]->nblocks(),
+                                                      share_face,
+                                                      wrap,
+                                                      ghost,
+                                                      given0);
+    decomps[1]   = new diy::RegularDecomposer<Bounds>(3,
+                                                      domain1,
+                                                      assigners[1]->nblocks(),
+                                                      share_face,
+                                                      wrap,
+                                                      ghost,
+                                                      given1);
 
     // report the number of blocks in each dimension of each mesh
     if (comms[0].rank() == 0)
