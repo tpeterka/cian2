@@ -41,10 +41,20 @@ struct Block
     Block()                                                     {}
     static void*    create()                                    { return new Block; }
     static void     destroy(void* b)                            { delete static_cast<Block*>(b); }
-    static void     save(const void* b, diy::BinaryBuffer& bb)
-        { diy::save(bb, *static_cast<const Block*>(b)); }
-    static void     load(void* b, diy::BinaryBuffer& bb)
-        { diy::load(bb, *static_cast<Block*>(b)); }
+    static void     save(const void* b_, diy::BinaryBuffer& bb)
+    {
+        const Block& b = *static_cast<const Block*>(b_);
+        diy::save(bb, b.data);
+        diy::save(bb, b.gid);
+        diy::save(bb, b.size);
+    }
+    static void     load(void* b_, diy::BinaryBuffer& bb)
+    {
+        Block& b = *static_cast<Block*>(b_);
+        diy::load(bb, b.data);
+        diy::load(bb, b.gid);
+        diy::load(bb, b.size);
+    }
     void generate_data(int n_)
         {
             size = n_;
@@ -102,22 +112,20 @@ struct AddBlock
 
 //
 // reset the size and data values in a block
-// args[0]: num_elems
-// args[1]: tot_blocks
 //
-void ResetBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* args)
+void ResetBlock(Block* b,
+        const diy::Master::ProxyWithLink& cp,
+        int num_elems)
 {
-    Block* b   = static_cast<Block*>(b_);
-    int num_elems = *(int*)args;
     b->generate_data(num_elems);
 }
 
 //
 // prints data values in a block (debugging)
 //
-void PrintBlock(void* b_, const diy::Master::ProxyWithLink& cp, void*)
+void PrintBlock(Block* b,
+        const diy::Master::ProxyWithLink& cp)
 {
-    Block* b   = static_cast<Block*>(b_);
     for (int i = 0; i < b->size; i++)
         fprintf(stderr, "gid %d size %lu data[%d] = %.1f\n", b->gid, b->size, i, b->data[i]);
 }
@@ -306,10 +314,11 @@ int main(int argc, char **argv)
         while (num_elems <= max_elems)
         {
             // initialize input data
-            master.foreach(&ResetBlock, &num_elems);
+            master.foreach([&](Block* b, const diy::Master::ProxyWithLink& cp)
+                    { ResetBlock(b, cp, num_elems ); });
 
             // debug
-//             master.foreach(&PrintBlock);
+//             master.foreach(PrintBlock);
 
             // name the file by the run number
             // rank 0 has the correct run numbering because it participated in all groups, so

@@ -1,6 +1,6 @@
-# CESAR Integrated Analytics Proxy Applications
+# Codesign Integrated Analytics Proxy Applications
 
-A set of DIY2 and MOAB benchmarks for coupling, communication, and I/O
+A set of DIY and MOAB benchmarks for coupling, communication, and I/O
 
 # Licensing
 
@@ -13,7 +13,7 @@ Build dependencies
 a. DIY
 
 ```
-git clone https://github.com/diatomic/diy2
+git clone https://github.com/diatomic/diy
 ```
 
 b. HDF5 (only if using the coupling proxy app)
@@ -50,6 +50,8 @@ make install
 
 Build cian
 
+A C++11 compiler is required.
+
 ```
 git clone https://github.com/tpeterka/cian2
 
@@ -57,7 +59,7 @@ cmake /path/to/cian2 \
 -DCMAKE_CXX_COMPILER=mpicxx \
 -DCMAKE_C_COMPILER=mpicc \
 -DCMAKE_INSTALL_PREFIX=/path/to/cian2/install \
--DDIY_INCLUDE_DIRS=/path/to/diy2/include \
+-DDIY_INCLUDE_DIRS=/path/to/diy/include \
 -DHDF5_INCLUDE_DIRS=/path/to/hdf5/include \
 -DHDF5_LIBRARY=/path/to/hdf5/lib/libhdf5.a \
 -DMOAB_INCLUDE_DIRS=/path/to/moab/include \
@@ -191,7 +193,7 @@ Edit the run script SORT_TEST for the desired parameters:
 ```
 cd path/to/cian2/install/io
 ```
-Tests DIY2's block-based parallel I/O (writing or reading) implemented using MPI-IO.
+Tests DIY's block-based parallel I/O (writing or reading) implemented using MPI-IO.
 
 Edit the run script IO_TEST for the desired parameters:
 

@@ -38,10 +38,22 @@ struct Block
     Block()                                                     {}
     static void*    create()                                    { return new Block; }
     static void     destroy(void* b)                            { delete static_cast<Block*>(b); }
-    static void     save(const void* b, diy::BinaryBuffer& bb)
-        { diy::save(bb, *static_cast<const Block*>(b)); }
-    static void     load(void* b, diy::BinaryBuffer& bb)
-        { diy::load(bb, *static_cast<Block*>(b)); }
+    static void     save(const void* b_, diy::BinaryBuffer& bb)
+    {
+        const Block& b = *static_cast<const Block*>(b_);
+        diy::save(bb, b.data);
+        diy::save(bb, b.gid);
+        diy::save(bb, b.size);
+        diy::save(bb, b.tot_b);
+    }
+    static void     load(void* b_, diy::BinaryBuffer& bb)
+    {
+        Block& b = *static_cast<Block*>(b_);
+        diy::load(bb, b.data);
+        diy::load(bb, b.gid);
+        diy::load(bb, b.size);
+        diy::load(bb, b.tot_b);
+    }
     void generate_data(int n_, int tot_b_)
         {
             size = n_;
@@ -84,23 +96,22 @@ struct AddBlock
 
 //
 // reset the size and data values in a block
-// args[0]: num_elems
-// args[1]: tot_blocks
 //
-void ResetBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* args)
+void ResetBlock(
+        Block* b,
+        const  diy::Master::ProxyWithLink& cp,
+        int    num_elems,
+        int    tot_blocks)
 {
-    Block* b   = static_cast<Block*>(b_);
-    int num_elems = *(int*)args;
-    int tot_blocks = *((int*)args + 1);
     b->generate_data(num_elems, tot_blocks);
 }
 
 //
 // prints data values in a block (debugging)
 //
-void PrintBlock(void* b_, const diy::Master::ProxyWithLink& cp, void*)
+void PrintBlock(Block* b,
+        const diy::Master::ProxyWithLink& cp)
 {
-    Block* b   = static_cast<Block*>(b_);
     for (int i = 0; i < b->size; i++)
         fprintf(stderr, "diy2 gid %d reduced data[%d] = %.1f\n", b->gid, i, b->data[i]);
 }
@@ -108,11 +119,10 @@ void PrintBlock(void* b_, const diy::Master::ProxyWithLink& cp, void*)
 //
 // checks diy2 block data against mpi data
 //
-void CheckBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* rs_)
+void CheckBlock(Block* b,
+        const diy::Master::ProxyWithLink& cp,
+        float* rs)
 {
-    Block* b   = static_cast<Block*>(b_);
-    float* rs = static_cast<float*>(rs_);
-
     for (int i = 0; i < b->size; i++)
     {
         if (b->data[i] != rs[i])
@@ -424,10 +434,8 @@ int main(int argc, char **argv)
                             num_elems);
 
             // initialize DIY input data
-            int args[2];
-            args[0] = num_elems;
-            args[1] = tot_blocks;
-            master.foreach(&ResetBlock, args);
+            master.foreach([&](Block* b, const diy::Master::ProxyWithLink& cp)
+                    { ResetBlock(b, cp, num_elems, tot_blocks); });
 
             // DIY alltoall
             DiyAlltoAll(diy_time,
@@ -439,8 +447,9 @@ int main(int argc, char **argv)
                         decomposer);
 
             // debug
-//             master.foreach(&PrintBlock);
-            master.foreach(&CheckBlock, alltoall_data);
+//             master.foreach(PrintBlock);
+            master.foreach([&](Block* b, const diy::Master::ProxyWithLink& cp)
+                    { CheckBlock(b, cp, alltoall_data); });
 
             num_elems *= 2; // double the number of elements every time
             run++;

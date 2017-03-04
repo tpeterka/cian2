@@ -39,10 +39,22 @@ struct Block
     Block()                                                     {}
     static void*    create()                                    { return new Block; }
     static void     destroy(void* b)                            { delete static_cast<Block*>(b); }
-    static void     save(const void* b, diy::BinaryBuffer& bb)
-        { diy::save(bb, *static_cast<const Block*>(b)); }
-    static void     load(void* b, diy::BinaryBuffer& bb)
-        { diy::load(bb, *static_cast<Block*>(b)); }
+    static void     save(const void* b_, diy::BinaryBuffer& bb)
+    {
+        const Block& b = *static_cast<const Block*>(b_);
+        diy::save(bb, b.min);
+        diy::save(bb, b.max);
+        diy::save(bb, b.values);
+        diy::save(bb, b.bins);
+    }
+    static void     load(void* b_, diy::BinaryBuffer& bb)
+    {
+        Block& b = *static_cast<Block*>(b_);
+        diy::load(bb, b.min);
+        diy::load(bb, b.max);
+        diy::load(bb, b.values);
+        diy::save(bb, b.bins);
+    }
     void generate_data(size_t n)
         {
             std::numeric_limits<int> lims;
@@ -83,22 +95,18 @@ struct AddBlock
 // args[0]: num_elems
 // args[1]: bins
 //
-void ResetBlock(void* b_,
+void ResetBlock(Block* b,
                 const diy::Master::ProxyWithLink& cp,
-                void* args)
+                int num_elems,
+                int num_bins)
 {
-    Block* b      = static_cast<Block*>(b_);
-    int *a        = (int*)args;
-    int num_elems = a[0];
-    b->bins       = a[1];
+    b->bins = num_bins;
     b->generate_data(num_elems);
 }
 
-void VerifyBlock(void* b_,
-                 const diy::Master::ProxyWithLink& cp,
-                 void*)
+void VerifyBlock(Block* b,
+                 const diy::Master::ProxyWithLink& cp)
 {
-    Block* b   = static_cast<Block*>(b_);
     int act_min, act_max; // actual min and max of the values
     for (size_t i = 0; i < b->values.size(); ++i)
     {
@@ -555,12 +563,11 @@ int main(int argc, char **argv)
         num_elems = min_elems;
         while (num_elems <= max_elems)
         {
-            int args[2];
-            args[0] = num_elems;
-            args[1] = target_k * hbins * groupsize;
-            master.foreach(&ResetBlock, args);
+            master.foreach([&](Block* b, const diy::Master::ProxyWithLink& cp)
+                    { ResetBlock(b, cp, num_elems, target_k * hbins * groupsize); });
             HistogramSort(hsort_time, run, target_k, comm, tot_blocks, master, assigner);
-            master.foreach(&ResetBlock, args);
+            master.foreach([&](Block* b, const diy::Master::ProxyWithLink& cp)
+                    { ResetBlock(b, cp, num_elems, target_k * hbins * groupsize); });
             SampleSort(ssort_time, run, target_k, comm, tot_blocks, master, assigner);
 
             // debug

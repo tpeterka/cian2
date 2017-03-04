@@ -31,16 +31,6 @@ typedef  diy::ContinuousBounds          Bounds;
 typedef  diy::RegularContinuousLink     RCLink;
 typedef  diy::RegularDecomposer<Bounds> Decomposer;
 
-// function prototypes
-// void GetArgs(int argc, char **argv, int &min_procs, int &min_elems,
-// 	     int &max_elems, int &nb, int &target_k, bool &op);
-// void MpiReduceScatter(float* reduce_scatter_data, double *reduce_scatter_time, int run,
-//                       float *in_data, MPI_Comm comm,
-//                       int num_elems, bool op);
-// void DiySwap(double *swap_time, int run, int k, MPI_Comm comm, int dim, int totblocks,
-//              bool contiguous, diy::Master& master, diy::ContiguousAssigner& assigner, bool op);
-// void PrintResults(double *reduce_scatter_time, double *swap_time, int min_procs,
-// 		  int max_procs, int min_elems, int max_elems);
 void ComputeSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPartners&);
 void NoopSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPartners&);
 void Over(void *in, void *inout, int *len, MPI_Datatype*);
@@ -53,10 +43,26 @@ struct Block
     Block()                                                     {}
     static void*    create()                                    { return new Block; }
     static void     destroy(void* b)                            { delete static_cast<Block*>(b); }
-    static void     save(const void* b, diy::BinaryBuffer& bb)
-        { diy::save(bb, *static_cast<const Block*>(b)); }
-    static void     load(void* b, diy::BinaryBuffer& bb)
-        { diy::load(bb, *static_cast<Block*>(b)); }
+    static void     save(const void* b_, diy::BinaryBuffer& bb)
+    {
+        const Block& b = *static_cast<const Block*>(b_);
+        diy::save(bb, b.data);
+        diy::save(bb, b.gid);
+        diy::save(bb, b.sub_start);
+        diy::save(bb, b.sub_size);
+        diy::save(bb, b.n);
+        diy::save(bb, b.tot_b);
+    }
+    static void     load(void* b_, diy::BinaryBuffer& bb)
+    {
+        Block& b = *static_cast<Block*>(b_);
+        diy::load(bb, b.data);
+        diy::load(bb, b.gid);
+        diy::load(bb, b.sub_start);
+        diy::load(bb, b.sub_size);
+        diy::load(bb, b.n);
+        diy::load(bb, b.tot_b);
+    }
     void generate_data(int n_, int tot_b_)
         {
             n = n_;
@@ -110,14 +116,13 @@ struct AddBlock
 };
 //
 // reset the size and data values in a block
-// args[0]: num_elems
-// args[1]: tot_blocks
 //
-void ResetBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* args)
+void ResetBlock(
+        Block* b,
+        const  diy::Master::ProxyWithLink& cp,
+        int    num_elems,
+        int    tot_blocks)
 {
-    Block* b   = static_cast<Block*>(b_);
-    int num_elems = *(int*)args;
-    int tot_blocks = *((int*)args + 1);
     b->generate_data(num_elems, tot_blocks);
     b->sub_start = 0;
     b->sub_size = num_elems;
@@ -125,9 +130,8 @@ void ResetBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* args)
 //
 // prints data values in a block (debugging)
 //
-void PrintBlock(void* b_, const diy::Master::ProxyWithLink& cp, void*)
+void PrintBlock(Block* b, const diy::Master::ProxyWithLink& cp, void*)
 {
-    Block* b   = static_cast<Block*>(b_);
     fprintf(stderr, "sub_start = %d sub_size = %d\n", b->sub_start, b->sub_size);
     for (int i = 0; i < b->sub_size / 4; i++)
         fprintf(stderr, "diy2 gid %d reduced data[4 * %d] = (%.1f, %.1f, %.1f %.1f)\n", b->gid, i,
@@ -139,11 +143,10 @@ void PrintBlock(void* b_, const diy::Master::ProxyWithLink& cp, void*)
 //
 // checks diy2 block data against mpi reduce-scatter data
 //
-void CheckBlock(void* b_, const diy::Master::ProxyWithLink& cp, void* rs_)
+void CheckBlock(Block* b,
+        const diy::Master::ProxyWithLink& cp,
+        float* rs)
 {
-    Block* b   = static_cast<Block*>(b_);
-    float* rs = static_cast<float*>(rs_);
-
     float max = 0;
 
     if (b->sub_size != b->n / b->tot_b)
@@ -369,8 +372,12 @@ void DiySwap(double *swap_time,                          // time (output)
 // min_procs, max_procs: process range
 // min_elems, max_elems: data range
 //
-void PrintResults(double *reduce_scatter_time, double *swap_time, int min_procs,
-		  int max_procs, int min_elems, int max_elems)
+void PrintResults(double *reduce_scatter_time,
+        double *swap_time,
+        int min_procs,
+        int max_procs,
+        int min_elems,
+        int max_elems)
 {
     int elem_iter = 0;                                            // element iteration number
     int num_elem_iters = (int)(log2(max_elems / min_elems) + 1);  // number of element iterations
@@ -665,8 +672,14 @@ void Over(void *in_, void *inout_, int *len, MPI_Datatype *type)
 // target_k: target k-value (output)
 // op: whether to run to operator or no op
 //
-void GetArgs(int argc, char **argv, int &min_procs,
-	     int &min_elems, int &max_elems, int &nb, int &target_k, bool &op)
+void GetArgs(int argc,
+        char **argv,
+        int &min_procs,
+        int &min_elems,
+        int &max_elems,
+        int &nb,
+        int &target_k,
+        bool &op)
 {
     using namespace opts;
     Options ops(argc, argv);
@@ -784,17 +797,15 @@ int main(int argc, char **argv)
 
             // DIY swap
             // initialize input data
-            int args[2];
-            args[0] = num_elems;
-            args[1] = tot_blocks;
-
-            master.foreach(&ResetBlock, args);
+            master.foreach([&](Block* b, const diy::Master::ProxyWithLink& cp)
+                    { ResetBlock(b, cp, num_elems, tot_blocks); });
 
             DiySwap(swap_time, run, target_k, comm, decomposer, true, master, assigner, op);
 
             // debug
             //       master.foreach(PrintBlock);
-            master.foreach(&CheckBlock, reduce_scatter_data);
+            master.foreach([&](Block* b, const diy::Master::ProxyWithLink& cp)
+                    { CheckBlock(b, cp, reduce_scatter_data); });
 
             num_elems *= 2; // double the number of elements every time
             run++;
