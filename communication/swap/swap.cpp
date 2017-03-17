@@ -389,7 +389,7 @@ void PrintResults(double *reduce_scatter_time,
     int num_elems = min_elems;
     while (num_elems <= max_elems)
     {
-        fprintf(stderr, "\n# num_elemnts = %d   size @ 4 bytes / element = %d KB\n",
+        fprintf(stderr, "\n# num_elements = %d   size @ 4 bytes / element = %d KB\n",
                 num_elems, num_elems * 4 / 1024);
         fprintf(stderr, "# procs \t red_scat_time \t swap_time\n");
 
@@ -559,28 +559,13 @@ void NoopSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPartne
     int sub_size;             // subset size
 
     // find my position in the link
-    int mypos;
-    for (unsigned i = 0; i < rp.in_link().size(); ++i)
-    {
-        if (rp.in_link().target(i).gid == rp.gid())
-            mypos = i;
-    }
-
-    // dequeue and reduce
     int k = rp.in_link().size();
-    for (unsigned i = 0; i < k; ++i)
+    int mypos;
+    if (k > 0)
     {
-        if (rp.in_link().target(i).gid == rp.gid())
-            continue;
-
-        // allocate receive buffer to correct subsize and then dequeue
-        if (i == k - 1) // last subset may be different size
-            sub_size = b->sub_size - (i * b->sub_size / k);
-        else
-            sub_size = b->sub_size / k;
-        float* in = (float*) &rp.incoming(rp.in_link().target(i).gid).buffer[0];
-        //std::vector< float > in(sub_size);
-        //rp.dequeue(rp.in_link().target(i).gid, &in[0], sub_size);
+        for (unsigned i = 0; i < k; ++i)
+            if (rp.in_link().target(i).gid == rp.gid())
+                mypos = i;
 
         // compute my subset indices for the result of the swap
         b->sub_start += (mypos * b->sub_size / k);
@@ -588,6 +573,17 @@ void NoopSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPartne
             b->sub_size = b->sub_size - (mypos * b->sub_size / k);
         else
             b->sub_size = b->sub_size / k;
+
+        // dequeue
+        for (unsigned i = 0; i < k; ++i)
+        {
+            if (rp.in_link().target(i).gid == rp.gid())
+                continue;
+
+            float* in = (float*) &rp.incoming(rp.in_link().target(i).gid).buffer[0];
+            //std::vector< float > in(sub_size);
+            //rp.dequeue(rp.in_link().target(i).gid, &in[0], sub_size);
+        }
     }
 
     if (!rp.out_link().size())

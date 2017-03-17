@@ -48,7 +48,7 @@ max_elems=$[8 * $K]
 nb=1
 
 # operation (w or r)
-op=r
+op=w
 
 #------
 #
