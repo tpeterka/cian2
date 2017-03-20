@@ -1,8 +1,6 @@
 project                     (cian)
 cmake_minimum_required      (VERSION 2.8)
 
-option                      (optimize       "Build cian with optimization"          ON)
-option                      (debug          "Build cian with debugging on"          OFF)
 option                      (bgq            "Build on BG/Q"                         OFF)
 option                      (diy_thread     "Enable diy threading"                  OFF)
 

@@ -538,11 +538,12 @@ int main(int argc, char **argv)
     double all_all_v_time[num_runs];
     double swap_time[num_runs];
 
-    // data for MPI reduce, only for one local block
-    int out_size = max_rays * avg_elems / max_procs;
+    // data for MPI reduce
+    // allocate once for largest run (max_rays and min_procs) and reuse for all runs
+    int out_size = max_rays * avg_elems / min_procs;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     if (rank == max_procs - 1)
-        out_size = max_rays * avg_elems - (max_procs - 1) * max_rays * avg_elems / max_procs;
+        out_size = max_rays * avg_elems - (min_procs - 1) * max_rays * avg_elems / min_procs;
     float *all_all_v_data = new float[out_size];
     float *in_data        = new float[max_rays * avg_elems];
 
@@ -594,11 +595,7 @@ int main(int argc, char **argv)
             master.foreach([&](Block* b, const diy::Master::ProxyWithLink& cp)
                     { ResetBlock(b, cp, num_rays, avg_elems, master); });
 
-            // debug: print the block
-//             master.foreach([&](Block* b, const diy::Master::ProxyWithLink& cp)
-//                     { PrintBlock(b, cp, avg_elems); });
-
-//             DiySwap(swap_time, run, target_k, comm, decomposer, master, assigner);
+            DiySwap(swap_time, run, target_k, comm, decomposer, master, assigner);
 
             // debug: print the block
 //             master.foreach([&](Block* b, const diy::Master::ProxyWithLink& cp)
