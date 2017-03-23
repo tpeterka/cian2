@@ -183,9 +183,10 @@ void MpiAlltoAllv(float* all_all_v_data, double *all_all_v_time, int run,
     int* displs      = new int[groupsize];
     int* recv_counts = new int[groupsize];
     int* recv_displs = new int[groupsize];
-    int recv_nrays = nrays / groupsize;                 // number of rays in the chunk I am receiving
+    int recv_nrays = nrays / groupsize;                         // number of rays in the chunk I am receiving
+    double f = ((double)groupsize - 1) / (double)groupsize;     // fraction of ranks excluding the last one
     if (rank == groupsize - 1)
-        recv_nrays = nrays - (groupsize - 1) * nrays / groupsize;
+        recv_nrays = (1.0 - f) * nrays;
     int* recv_nray_elems = new int[nrays];
     for (int i = 0; i < groupsize; i++)
     {
@@ -194,10 +195,14 @@ void MpiAlltoAllv(float* all_all_v_data, double *all_all_v_time, int run,
         recv_counts[i] = recv_nrays;
         recv_displs[i] = (i == 0 ? 0 : displs[i - 1] + recv_counts[i - 1]);
     }
-    ray_counts[groupsize - 1] = nrays - (groupsize - 1) * nrays / groupsize; // remainder
-//     fprintf(stderr, "2: ray_counts[%d %d] displs[%d %d] recv_counts[%d %d] recv_displs[%d %d]\n",
-//             ray_counts[0], ray_counts[1], displs[0], displs[1],
-//             recv_counts[0], recv_counts[1], recv_displs[0], recv_displs[1]);
+    ray_counts[groupsize - 1] = (1.0 - f) * nrays; // remainder
+//     if (rank == 0)
+//     {
+//         fprintf(stderr, "1: f=%lf 1.0-f=%lf rem_n_rays=%d\n", f, 1.0 - f, (int)((1.0 - f) * nrays));
+//         fprintf(stderr, "2: ray_counts[%d %d ... %d] displs[%d %d ... %d] recv_counts[%d %d ... %d] recv_displs[%d %d ... %d]\n",
+//                 ray_counts[0], ray_counts[1], ray_counts[groupsize - 1], displs[0], displs[1], displs[groupsize - 1],
+//                 recv_counts[0], recv_counts[1], recv_counts[groupsize - 1], recv_displs[0], recv_displs[1], recv_displs[groupsize - 1]);
+//     }
     MPI_Alltoallv((void *)nray_elems, ray_counts, displs, MPI_INT,
             (void *)recv_nray_elems, recv_counts, recv_displs, MPI_INT, comm);
 
@@ -209,6 +214,9 @@ void MpiAlltoAllv(float* all_all_v_data, double *all_all_v_time, int run,
         for (int i = 0; i < ray_counts[j]; i++)
             elem_counts[j] += avg_elems;
     }
+
+//     if (rank == 0)
+//         fprintf(stderr, "2: elem_counts[%d %d ... %d]\n", elem_counts[0], elem_counts[1], elem_counts[groupsize - 1]);
 
     // the number of elements to be received, total and from each process
     int tot_recv_nelems = 0;
@@ -233,7 +241,7 @@ void MpiAlltoAllv(float* all_all_v_data, double *all_all_v_time, int run,
         displs[i]      = (i == 0 ? 0 : displs[i - 1] + elem_counts[i - 1]);
         recv_displs[i] = (i == 0 ? 0 : displs[i - 1] + recv_counts[i - 1]);
     }
-//     fprintf(stderr, "3: counts[%d %d] displs[%d %d] recv_counts[%d %d] recv_displs[%d %d]\n",
+//     fprintf(stderr, "4: counts[%d %d] displs[%d %d] recv_counts[%d %d] recv_displs[%d %d]\n",
 //             counts[0], counts[1], displs[0], displs[1],
 //             recv_counts[0], recv_counts[1], recv_displs[0], recv_displs[1]);
     MPI_Alltoallv(in_data, elem_counts, displs, MPI_FLOAT,
@@ -323,8 +331,6 @@ void NoopSwap(void* b_,
                 b->sub_start += b->nray_elems[ray_idx++];
         b->start_ray = ray_idx;
 
-//         fprintf(stderr, "b->start_ray=%d\n", b->start_ray);
-
         // sub_size for the section of my data to receive
         b->sub_size = 0;
         if (mypos == k - 1)                 // last subset may be different size
@@ -332,8 +338,6 @@ void NoopSwap(void* b_,
         for (int j = 0; j < nrays; j++)
             b->sub_size += b->nray_elems[ray_idx++];   // ray_idx was set by the sub_start iteration before
         b->nrays = nrays;
-
-//         fprintf(stderr, "1: b->nrays=%d b->sub_start=%d b->sub_size=%d\n", b->nrays, b->sub_start, b->sub_size);
 
         for (int i = 0; i < k; i++)
         {
