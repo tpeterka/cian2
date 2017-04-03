@@ -154,6 +154,33 @@ Edit the run script SWAP_TEST for the desired parameters:
 ./SWAP_TEST
 ```
 
+### Partial composite swap-reduction (DIY swap-reduction vs. MPI Alltoallv)
+
+```
+cd path/to/cian2/install/communication/swap_vs_alltoallv
+```
+
+The reduction operator used in this swap reduction is a no-op copy of the
+received data into the block in each round.
+
+Edit the run script SWAP_TEST for the desired parameters:
+
+- min procs, max procs = minimum and maximum number of MPI processes
+- min rays, max rays = minimum and maximum number of rays in each block
+  (process). Each ray has a given average number of elements along it to be
+  reduced.
+- nb = number of blocks per MPI process
+- k = target k value (radix for k-ary reduction)
+- avg_elems = average number of elements per ray. Each element is one
+  floating-point value in this test. Even though the number of elements per ray is given as
+  a constant, the proxuy app is constructed to not assume a constant
+  value. In other words, the number of elements in each ray is communicated before the
+  actual elements are communicated.
+
+```
+./SWAP_TEST
+```
+
 ### All-to-all
 
 ```

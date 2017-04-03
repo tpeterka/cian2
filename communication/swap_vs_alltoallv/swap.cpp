@@ -62,25 +62,25 @@ struct Block
     void generate_data(int tot_nrays,       // total global number of rays
             int avg_elems,                  // average number of elements per ray
             diy::Master& master)
-        {
-            // each block starts with the entire image of all rays
-            nrays = tot_nrays;
+    {
+        // each block starts with the entire image of all rays
+        nrays = tot_nrays;
 
-            // even though in this example the number of elements per ray is given as a constant
-            // (avg_elems), the block data model is written as if the number of elements per ray
-            // varies
-            data.resize(nrays * avg_elems);
+        // even though in this example the number of elements per ray is given as a constant
+        // (avg_elems), the block data model is written as if the number of elements per ray
+        // varies
+        data.resize(nrays * avg_elems);
 
-            for (int i = 0; i < data.size(); ++i)
-                data[i] = i / avg_elems;    // for now just give all the elements in a ray the same value
-            nray_elems.resize(nrays);
-            for (int i = 0; i < nrays; i++)
-                nray_elems[i] = avg_elems;
+        for (int i = 0; i < data.size(); ++i)
+            data[i] = i / avg_elems;    // for now just give all the elements in a ray the same value
+        nray_elems.resize(nrays);
+        for (int i = 0; i < nrays; i++)
+            nray_elems[i] = avg_elems;
 
-            sub_start = 0;
-            sub_size  = nrays * avg_elems;
-            start_ray = 0;
-        }
+        sub_start = 0;
+        sub_size  = nrays * avg_elems;
+        start_ray = 0;
+    }
 
     // assume there are a variable number of elements per ray, each element is one float
     std::vector<float> data;        // element data for all rays
@@ -100,14 +100,14 @@ struct AddBlock
         master(master_)     {}
 
     void operator()(int gid, const Bounds& core, const Bounds& bounds, const Bounds& domain,
-                    const RCLink& link) const
-        {
-            Block*        b = new Block();
-            RCLink*       l = new RCLink(link);
-            diy::Master&  m = const_cast<diy::Master&>(master);
-            m.add(gid, b, l);
-            b->gid = gid;
-        }
+            const RCLink& link) const
+    {
+        Block*        b = new Block();
+        RCLink*       l = new RCLink(link);
+        diy::Master&  m = const_cast<diy::Master&>(master);
+        m.add(gid, b, l);
+        b->gid = gid;
+    }
 
     diy::Master&  master;
 };
@@ -153,7 +153,7 @@ void PrintBlock(Block* b,
 // avg_elems: average number of elements per ray
 //
 void MpiAlltoAllv(float* all_all_v_data, double *all_all_v_time, int run,
-                      float *in_data, MPI_Comm comm, int nrays, int avg_elems)
+        float *in_data, MPI_Comm comm, int nrays, int avg_elems)
 {
     // init
     int rank;
@@ -196,13 +196,13 @@ void MpiAlltoAllv(float* all_all_v_data, double *all_all_v_time, int run,
         recv_displs[i] = (i == 0 ? 0 : displs[i - 1] + recv_counts[i - 1]);
     }
     ray_counts[groupsize - 1] = (1.0 - f) * nrays; // remainder
-//     if (rank == 0)
-//     {
-//         fprintf(stderr, "1: f=%lf 1.0-f=%lf rem_n_rays=%d\n", f, 1.0 - f, (int)((1.0 - f) * nrays));
-//         fprintf(stderr, "2: ray_counts[%d %d ... %d] displs[%d %d ... %d] recv_counts[%d %d ... %d] recv_displs[%d %d ... %d]\n",
-//                 ray_counts[0], ray_counts[1], ray_counts[groupsize - 1], displs[0], displs[1], displs[groupsize - 1],
-//                 recv_counts[0], recv_counts[1], recv_counts[groupsize - 1], recv_displs[0], recv_displs[1], recv_displs[groupsize - 1]);
-//     }
+    //     if (rank == 0)
+    //     {
+    //         fprintf(stderr, "1: f=%lf 1.0-f=%lf rem_n_rays=%d\n", f, 1.0 - f, (int)((1.0 - f) * nrays));
+    //         fprintf(stderr, "2: ray_counts[%d %d ... %d] displs[%d %d ... %d] recv_counts[%d %d ... %d] recv_displs[%d %d ... %d]\n",
+    //                 ray_counts[0], ray_counts[1], ray_counts[groupsize - 1], displs[0], displs[1], displs[groupsize - 1],
+    //                 recv_counts[0], recv_counts[1], recv_counts[groupsize - 1], recv_displs[0], recv_displs[1], recv_displs[groupsize - 1]);
+    //     }
     MPI_Alltoallv((void *)nray_elems, ray_counts, displs, MPI_INT,
             (void *)recv_nray_elems, recv_counts, recv_displs, MPI_INT, comm);
 
@@ -215,8 +215,8 @@ void MpiAlltoAllv(float* all_all_v_data, double *all_all_v_time, int run,
             elem_counts[j] += avg_elems;
     }
 
-//     if (rank == 0)
-//         fprintf(stderr, "2: elem_counts[%d %d ... %d]\n", elem_counts[0], elem_counts[1], elem_counts[groupsize - 1]);
+    //     if (rank == 0)
+    //         fprintf(stderr, "2: elem_counts[%d %d ... %d]\n", elem_counts[0], elem_counts[1], elem_counts[groupsize - 1]);
 
     // the number of elements to be received, total and from each process
     int tot_recv_nelems = 0;
@@ -232,7 +232,7 @@ void MpiAlltoAllv(float* all_all_v_data, double *all_all_v_time, int run,
         }
     }
 
-//     fprintf(stderr, "3: recv_nelems=%d\n", tot_recv_nelems);
+    //     fprintf(stderr, "3: recv_nelems=%d\n", tot_recv_nelems);
 
     // the elements in the rays
     float* recv_data = new float[tot_recv_nelems];
@@ -241,9 +241,9 @@ void MpiAlltoAllv(float* all_all_v_data, double *all_all_v_time, int run,
         displs[i]      = (i == 0 ? 0 : displs[i - 1] + elem_counts[i - 1]);
         recv_displs[i] = (i == 0 ? 0 : displs[i - 1] + recv_counts[i - 1]);
     }
-//     fprintf(stderr, "4: counts[%d %d] displs[%d %d] recv_counts[%d %d] recv_displs[%d %d]\n",
-//             counts[0], counts[1], displs[0], displs[1],
-//             recv_counts[0], recv_counts[1], recv_displs[0], recv_displs[1]);
+    //     fprintf(stderr, "4: counts[%d %d] displs[%d %d] recv_counts[%d %d] recv_displs[%d %d]\n",
+    //             counts[0], counts[1], displs[0], displs[1],
+    //             recv_counts[0], recv_counts[1], recv_displs[0], recv_displs[1]);
     MPI_Alltoallv(in_data, elem_counts, displs, MPI_FLOAT,
             recv_data, recv_counts, recv_displs, MPI_FLOAT, comm);
 
@@ -263,10 +263,10 @@ void MpiAlltoAllv(float* all_all_v_data, double *all_all_v_time, int run,
     }
 
     // debug: print the output data
-//     fprintf(stderr, "all_all_v_data:\n");
-//     for (int i = 0; i < recv_counts[rank]; i++)
-//         fprintf(stderr, "%.1f ", all_all_v_data[i]);
-//     fprintf(stderr, "\n");
+    //     fprintf(stderr, "all_all_v_data:\n");
+    //     for (int i = 0; i < recv_counts[rank]; i++)
+    //         fprintf(stderr, "%.1f ", all_all_v_data[i]);
+    //     fprintf(stderr, "\n");
 
     // cleanup
     delete[] nray_elems;
@@ -286,12 +286,12 @@ void MpiAlltoAllv(float* all_all_v_data, double *all_all_v_time, int run,
 // DIY swap
 //
 void DiySwap(double *swap_time,                          // time (output)
-             int run,                                    // run number
-             int k,                                      // desired k value (reduction tree radix)
-             MPI_Comm comm,                              // MPI communicator
-             Decomposer& decomposer,                     // diy RegularDecomposer object
-             diy::Master& master,                        // diy Master object
-             diy::ContiguousAssigner& assigner)          // diy Assigner object
+        int run,                                    // run number
+        int k,                                      // desired k value (reduction tree radix)
+        MPI_Comm comm,                              // MPI communicator
+        Decomposer& decomposer,                     // diy RegularDecomposer object
+        diy::Master& master,                        // diy Master object
+        diy::ContiguousAssigner& assigner)          // diy Assigner object
 {
     MPI_Barrier(comm);
     double t0 = MPI_Wtime();
@@ -349,8 +349,8 @@ void NoopSwap(void* b_,
             nray_elems = (int*)&rp.incoming(rp.in_link().target(i).gid).buffer[0];
 
             // debug: print number of elements per ray
-//             for (int j = 0; j < b->nrays; j++)
-//                 fprintf(stderr, "ray %d has %d elements\n", j, nray_elems[j]);
+            //             for (int j = 0; j < b->nrays; j++)
+            //                 fprintf(stderr, "ray %d has %d elements\n", j, nray_elems[j]);
 
             // dequeue ray elements
             // first (b->nrays * sizeof(int)) bytes of the buffer contain the previous number of
@@ -363,10 +363,10 @@ void NoopSwap(void* b_,
             memcpy(&b->data[b->sub_start], data, b->sub_size * sizeof(float));
 
             // debug: print the received data
-//             fprintf(stderr, "received data sub_start=%ld sub_size=%ld:\n", b->sub_start, b->sub_size);
-//             for (int i = 0; i < b->sub_size; i++)
-//                 fprintf(stderr, "%.1f ", b->data[b->sub_start + i]);
-//             fprintf(stderr, "\n");
+            //             fprintf(stderr, "received data sub_start=%ld sub_size=%ld:\n", b->sub_start, b->sub_size);
+            //             for (int i = 0; i < b->sub_size; i++)
+            //                 fprintf(stderr, "%.1f ", b->data[b->sub_start + i]);
+            //             fprintf(stderr, "\n");
         }
     }
 
@@ -404,10 +404,10 @@ void NoopSwap(void* b_,
         rp.enqueue(rp.out_link().target(i), &b->data[sub_start], sub_size);
 
         // debug: print the sent data
-//         fprintf(stderr, "sent data sub_start=%d sub_size=%d:\n", sub_start, sub_size);
-//         for (int i = 0; i < sub_size; i++)
-//             fprintf(stderr, "%.1f ", b->data[sub_start + i]);
-//         fprintf(stderr, "\n");
+        //         fprintf(stderr, "sent data sub_start=%d sub_size=%d:\n", sub_start, sub_size);
+        //         for (int i = 0; i < sub_size; i++)
+        //             fprintf(stderr, "%.1f ", b->data[sub_start + i]);
+        //         fprintf(stderr, "\n");
 
         sub_start += sub_size;
     }
@@ -487,12 +487,12 @@ void GetArgs(int argc,
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     if (ops >> Present('h', "help", "show help") ||
-        !(ops >> PosOption(min_procs)
-          >> PosOption(min_rays)
-          >> PosOption(max_rays)
-          >> PosOption(nb)
-          >> PosOption(target_k)
-          >> PosOption(avg_elems)))
+            !(ops >> PosOption(min_procs)
+                >> PosOption(min_rays)
+                >> PosOption(max_rays)
+                >> PosOption(nb)
+                >> PosOption(target_k)
+                >> PosOption(avg_elems)))
     {
         if (rank == 0)
             fprintf(stderr, "Usage: %s min_procs min_rays max_rays nb target_k avg_elems\n", argv[0]);
@@ -536,7 +536,7 @@ int main(int argc, char **argv)
     }
 
     int num_runs = (int)((log2(max_procs / min_procs) + 1) *
-                         (log2(max_rays / min_rays) + 1));
+            (log2(max_rays / min_rays) + 1));
 
     // timing
     double all_all_v_time[num_runs];
@@ -574,13 +574,13 @@ int main(int argc, char **argv)
         diy::mpi::communicator    world(comm);
         diy::FileStorage          storage("./DIY.XXXXXX");
         diy::Master               master(world,
-                                         num_threads,
-                                         mem_blocks,
-                                         &Block::create,
-                                         &Block::destroy,
-                                         &storage,
-                                         &Block::save,
-                                         &Block::load);
+                num_threads,
+                mem_blocks,
+                &Block::create,
+                &Block::destroy,
+                &storage,
+                &Block::save,
+                &Block::load);
         diy::ContiguousAssigner   assigner(world.size(), tot_blocks);
         AddBlock                  create(master);
         Decomposer                decomposer(dim, domain, assigner.nblocks());
@@ -602,8 +602,8 @@ int main(int argc, char **argv)
             DiySwap(swap_time, run, target_k, comm, decomposer, master, assigner);
 
             // debug: print the block
-//             master.foreach([&](Block* b, const diy::Master::ProxyWithLink& cp)
-//                     { PrintBlock(b, cp, avg_elems); });
+            //             master.foreach([&](Block* b, const diy::Master::ProxyWithLink& cp)
+            //                     { PrintBlock(b, cp, avg_elems); });
 
             num_rays *= 2; // double the number of rays every time
             run++;
