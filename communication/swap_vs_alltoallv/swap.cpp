@@ -342,9 +342,15 @@ void ReduceSwap(void* b_,
             memcpy(&b->data[b->sub_start], data, b->sub_size * sizeof(float));
     }
 
-    // first round: get nray_elems from the block
+    // first round: get nray_elems and data from the block
     if (!rp.in_link().size())
+    {
         nray_elems = &b->nray_elems[0];
+        data       = &b->data[0];
+    }
+    else                                        // set data pointer for later rounds to be either the block or the received data
+        if (b->reduce_factor > 1)
+            data = &b->data[0];
 
     // enqueue
     k = rp.out_link().size();
@@ -369,7 +375,7 @@ void ReduceSwap(void* b_,
             sub_size += nray_elems[j];
 
         // send the actual ray elements
-        rp.enqueue(rp.out_link().target(i), &b->data[sub_start], sub_size);
+        rp.enqueue(rp.out_link().target(i), &data[sub_start], sub_size);
 
         sub_start += sub_size;
     }
