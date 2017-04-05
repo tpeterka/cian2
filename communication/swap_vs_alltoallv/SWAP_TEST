@@ -52,11 +52,17 @@ nb=1
 
 # target k-value
 k=2
+
+# reduction factor (mimics compositing rf elements into one in each round)
+# rf <= 1 signals do not reduce and do not copy until last round, the closest comparison to an
+# alltoallv, with no reductions (memory copies) in the intermediate rounds
+rf=2
+
 #------
 #
 # program arguments
 #
-args="$min_procs $min_rays $max_rays $nb $k $avg_elems"
+args="$min_procs $min_rays $max_rays $nb $k $avg_elems $rf"
 
 #------
 #

@@ -173,7 +173,7 @@ Edit the run script SWAP_TEST for the desired parameters:
 - k = target k value (radix for k-ary reduction)
 - avg_elems = average number of elements per ray. Each element is one
   floating-point value in this test. Even though the number of elements per ray is given as
-  a constant, the proxuy app is constructed to not assume a constant
+  a constant, the proxy app is constructed to not assume a constant
   value. In other words, the number of elements in each ray is communicated before the
   actual elements are communicated.
 

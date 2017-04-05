@@ -61,6 +61,7 @@ struct Block
     }
     void generate_data(int tot_nrays,       // total global number of rays
             int avg_elems,                  // average number of elements per ray
+            int reduce_factor_,             // number of elements composed into one in each round
             diy::Master& master)
     {
         // each block starts with the entire image of all rays
@@ -80,6 +81,7 @@ struct Block
         sub_start = 0;
         sub_size  = nrays * avg_elems;
         start_ray = 0;
+        reduce_factor = reduce_factor_;
     }
 
     // assume there are a variable number of elements per ray, each element is one float
@@ -90,6 +92,7 @@ struct Block
     size_t start_ray;               // index of first ray in data range [sub_start, sub_start + sub_size - 1]
     size_t nrays;                   // number of rays
     std::vector<int> nray_elems;    // number of elements in each ray
+    int reduce_factor;              // number of elements composed into one in each round
 };
 //
 // add blocks to a master
@@ -119,9 +122,10 @@ void ResetBlock(
         const  diy::Master::ProxyWithLink&  cp,
         int                                 num_rays,
         int                                 avg_elems,
+        int                                 reduce_factor,
         diy::Master&                        master)
 {
-    b->generate_data(num_rays, avg_elems, master);
+    b->generate_data(num_rays, avg_elems, reduce_factor, master);
 }
 //
 // prints data values in a block (debugging)
@@ -130,8 +134,8 @@ void PrintBlock(Block* b,
         const diy::Master::ProxyWithLink& cp,
         int avg_elems)
 {
-    fprintf(stderr, "gid = %d sub_start = %ld sub_size = %ld start_ray=%ld\n",
-            b->gid, b->sub_start, b->sub_size, b->start_ray);
+    fprintf(stderr, "gid = %d sub_start = %ld sub_size = %ld start_ray=%ld nrays = %ld\n",
+            b->gid, b->sub_start, b->sub_size, b->start_ray, b->nrays);
     int n = b->sub_start;
     for (int i = 0; i < b->nrays; i++)
     {
@@ -303,7 +307,7 @@ void DiySwap(double *swap_time,                          // time (output)
     swap_time[run] = MPI_Wtime() - t0;
 }
 //
-// Noop for DIY swap
+// Reduction (noop) for DIY swap
 //
 void NoopSwap(void* b_,
         const diy::ReduceProxy& rp,
@@ -312,7 +316,8 @@ void NoopSwap(void* b_,
     Block* b = static_cast<Block*>(b_);
     int sub_start;              // subset starting index
     int sub_size;               // subset size
-    int* nray_elems;            // just received or current number of elements in each ray
+    int* nray_elems;            // pointer to just received or current number of elements in each ray
+    float* data;                // pointer to just received data
 
     // find my position in the link
     int k = rp.in_link().size();
@@ -323,20 +328,15 @@ void NoopSwap(void* b_,
             if (rp.in_link().target(i).gid == rp.gid())
                 mypos = i;
 
-        // sub_start for the section of my data to receive
+        // sub_start, starting ray index, and number of rays to be received
         int ray_idx = b->start_ray;         // index of current ray
         int nrays   = b->nrays / k;         // number of rays in any section except last one
         for (int i = 0; i < mypos; i++)
             for (int j = 0; j < nrays; j++)
                 b->sub_start += b->nray_elems[ray_idx++];
         b->start_ray = ray_idx;
-
-        // sub_size for the section of my data to receive
-        b->sub_size = 0;
         if (mypos == k - 1)                 // last subset may be different size
             nrays = b->nrays - mypos * b->nrays / k;
-        for (int j = 0; j < nrays; j++)
-            b->sub_size += b->nray_elems[ray_idx++];   // ray_idx was set by the sub_start iteration before
         b->nrays = nrays;
 
         for (int i = 0; i < k; i++)
@@ -345,22 +345,39 @@ void NoopSwap(void* b_,
             if (rp.in_link().target(i).gid == rp.gid())
                 continue;
 
-            // dequeue number of elements in each ray
+            // "shallow" dequeue number of elements in each ray (set pointer to start)
             nray_elems = (int*)&rp.incoming(rp.in_link().target(i).gid).buffer[0];
 
-            // debug: print number of elements per ray
+            // sub_size = total number of ray elements received
+            b->sub_size = 0;
+            for (int j = 0; j < b->nrays; j++)
+                b->sub_size += nray_elems[j];
+
+                // debug: print number of elements per ray
             //             for (int j = 0; j < b->nrays; j++)
             //                 fprintf(stderr, "ray %d has %d elements\n", j, nray_elems[j]);
 
-            // dequeue ray elements
+            // "shallow" dequeue ray elements (set pointer to their start)
             // first (b->nrays * sizeof(int)) bytes of the buffer contain the previous number of
             // elements per ray; element data starts after that
-            float* data =
-                (float*)&rp.incoming(rp.in_link().target(i).gid).buffer[b->nrays * sizeof(int)];
+            data = (float*)&rp.incoming(rp.in_link().target(i).gid).buffer[b->nrays * sizeof(int)];
 
             // reduce the contents of data with the contents of b->data starting at sub_start and
-            // for size sub_size; for noop, just replace b->data with data
-            memcpy(&b->data[b->sub_start], data, b->sub_size * sizeof(float));
+            // for size sub_size; in this proxy app, just replace b->data with data and reduce
+            // number of elements by reduce_factor in each round to mimic the compositing
+            // together of the elements by some factor
+            // if reduce_factor == 0, don't copy anything (mimics a no-op, not even a copy, in each round)
+            if (b->reduce_factor > 1)
+            {
+                memcpy(&b->data[b->sub_start], data, b->sub_size * sizeof(float));
+                for (int i = 0; i < b->nrays; i++)
+                    nray_elems[i] /= b->reduce_factor;
+                // adjust sub_size for the reduced number of elements that were composed
+                // not exactly correct because this leaves holes in the data (each ray has fewer
+                // elements), but we're not repacking the data because the alltoallv version is just
+                // a simple memcopy too, not a data reshuffling either
+                b->sub_size /= b->reduce_factor;
+            }
 
             // debug: print the received data
             //             fprintf(stderr, "received data sub_start=%ld sub_size=%ld:\n", b->sub_start, b->sub_size);
@@ -370,9 +387,13 @@ void NoopSwap(void* b_,
         }
     }
 
-    // last round: save nray_elems in the block
+    // last round: save nray_elems in the block and data if it wasn't copied before
     if (!rp.out_link().size())
+    {
         memcpy(&b->nray_elems[b->start_ray], nray_elems, b->nrays * sizeof(int));
+        if (b->reduce_factor <= 1)
+            memcpy(&b->data[b->sub_start], data, b->sub_size * sizeof(float));
+    }
 
     // first round: get nray_elems from the block
     if (!rp.in_link().size())
@@ -469,6 +490,7 @@ void PrintResults(double *all_all_v_time,
 // nb: number of blocks per process (output)
 // target_k: target k-value (output)
 // avg_elems: average number of elements per ray
+// reduce_factor: reduce number of elements in each round by this factor (compose them together)
 //
 void GetArgs(int argc,
         char **argv,
@@ -477,7 +499,8 @@ void GetArgs(int argc,
         int &max_rays,
         int &nb,
         int &target_k,
-        int &avg_elems)
+        int &avg_elems,
+        int &reduce_factor)
 {
     using namespace opts;
     Options ops(argc, argv);
@@ -492,10 +515,11 @@ void GetArgs(int argc,
                 >> PosOption(max_rays)
                 >> PosOption(nb)
                 >> PosOption(target_k)
-                >> PosOption(avg_elems)))
+                >> PosOption(avg_elems)
+                >> PosOption(reduce_factor)))
     {
         if (rank == 0)
-            fprintf(stderr, "Usage: %s min_procs min_rays max_rays nb target_k avg_elems\n", argv[0]);
+            fprintf(stderr, "Usage: %s min_procs min_rays max_rays nb target_k avg_elems reduce_factor\n", argv[0]);
         exit(1);
     }
 
@@ -503,8 +527,8 @@ void GetArgs(int argc,
     assert(min_rays >= nb * max_procs);
 
     if (rank == 0)
-        fprintf(stderr, "min_procs = %d min_rays = %d max_rays = %d nb = %d target_k = %d avg_elems = %d\n",
-                min_procs, min_rays, max_rays, nb, target_k, avg_elems);
+        fprintf(stderr, "min_procs = %d min_rays = %d max_rays = %d nb = %d target_k = %d avg_elems = %d reduce_factor = %d\n",
+                min_procs, min_rays, max_rays, nb, target_k, avg_elems, reduce_factor);
 }
 //
 // main
@@ -518,6 +542,7 @@ int main(int argc, char **argv)
     int min_rays, max_rays;   // min, max number of rays per block
     int num_rays;             // current total, global number of rays per block
     int avg_elems;            // average number of elements per ray
+    int reduce_factor;        // number of elements to compose into one in each round
     int rank, groupsize;      // MPI usual
     int min_procs;            // minimum number of processes
     int max_procs;            // maximum number of processes (groupsize of MPI_COMM_WORLD)
@@ -525,7 +550,7 @@ int main(int argc, char **argv)
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &max_procs);
 
-    GetArgs(argc, argv, min_procs, min_rays, max_rays, nblocks, target_k, avg_elems);
+    GetArgs(argc, argv, min_procs, min_rays, max_rays, nblocks, target_k, avg_elems, reduce_factor);
 
     // data extents, unused
     Bounds domain;
@@ -597,13 +622,13 @@ int main(int argc, char **argv)
             // DIY swap
             // initialize input data
             master.foreach([&](Block* b, const diy::Master::ProxyWithLink& cp)
-                    { ResetBlock(b, cp, num_rays, avg_elems, master); });
+                    { ResetBlock(b, cp, num_rays, avg_elems, reduce_factor, master); });
 
             DiySwap(swap_time, run, target_k, comm, decomposer, master, assigner);
 
             // debug: print the block
-            //             master.foreach([&](Block* b, const diy::Master::ProxyWithLink& cp)
-            //                     { PrintBlock(b, cp, avg_elems); });
+//             master.foreach([&](Block* b, const diy::Master::ProxyWithLink& cp)
+//                     { PrintBlock(b, cp, avg_elems); });
 
             num_rays *= 2; // double the number of rays every time
             run++;
