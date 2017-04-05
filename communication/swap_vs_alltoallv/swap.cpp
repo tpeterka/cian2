@@ -31,8 +31,6 @@ typedef  diy::ContinuousBounds          Bounds;
 typedef  diy::RegularContinuousLink     RCLink;
 typedef  diy::RegularDecomposer<Bounds> Decomposer;
 
-void NoopSwap(void* b_, const diy::ReduceProxy& rp, const diy::RegularSwapPartners&);
-
 // block
 struct Block
 {
@@ -94,7 +92,7 @@ struct Block
     std::vector<int> nray_elems;    // number of elements in each ray
     int reduce_factor;              // number of elements composed into one in each round
 };
-//
+
 // add blocks to a master
 //
 struct AddBlock
@@ -114,7 +112,7 @@ struct AddBlock
 
     diy::Master&  master;
 };
-//
+
 // reset the size and data values in a block
 //
 void ResetBlock(
@@ -127,7 +125,7 @@ void ResetBlock(
 {
     b->generate_data(num_rays, avg_elems, reduce_factor, master);
 }
-//
+
 // prints data values in a block (debugging)
 //
 void PrintBlock(Block* b,
@@ -145,7 +143,7 @@ void PrintBlock(Block* b,
         fprintf(stderr, "\n");
     }
 }
-//
+
 // MPI all_to_all_v
 //
 // all_all_v_data: data values (output) allocated by caller
@@ -200,13 +198,6 @@ void MpiAlltoAllv(float* all_all_v_data, double *all_all_v_time, int run,
         recv_displs[i] = (i == 0 ? 0 : displs[i - 1] + recv_counts[i - 1]);
     }
     ray_counts[groupsize - 1] = (1.0 - f) * nrays; // remainder
-    //     if (rank == 0)
-    //     {
-    //         fprintf(stderr, "1: f=%lf 1.0-f=%lf rem_n_rays=%d\n", f, 1.0 - f, (int)((1.0 - f) * nrays));
-    //         fprintf(stderr, "2: ray_counts[%d %d ... %d] displs[%d %d ... %d] recv_counts[%d %d ... %d] recv_displs[%d %d ... %d]\n",
-    //                 ray_counts[0], ray_counts[1], ray_counts[groupsize - 1], displs[0], displs[1], displs[groupsize - 1],
-    //                 recv_counts[0], recv_counts[1], recv_counts[groupsize - 1], recv_displs[0], recv_displs[1], recv_displs[groupsize - 1]);
-    //     }
     MPI_Alltoallv((void *)nray_elems, ray_counts, displs, MPI_INT,
             (void *)recv_nray_elems, recv_counts, recv_displs, MPI_INT, comm);
 
@@ -218,9 +209,6 @@ void MpiAlltoAllv(float* all_all_v_data, double *all_all_v_time, int run,
         for (int i = 0; i < ray_counts[j]; i++)
             elem_counts[j] += avg_elems;
     }
-
-    //     if (rank == 0)
-    //         fprintf(stderr, "2: elem_counts[%d %d ... %d]\n", elem_counts[0], elem_counts[1], elem_counts[groupsize - 1]);
 
     // the number of elements to be received, total and from each process
     int tot_recv_nelems = 0;
@@ -236,8 +224,6 @@ void MpiAlltoAllv(float* all_all_v_data, double *all_all_v_time, int run,
         }
     }
 
-    //     fprintf(stderr, "3: recv_nelems=%d\n", tot_recv_nelems);
-
     // the elements in the rays
     float* recv_data = new float[tot_recv_nelems];
     for (int i = 0; i < groupsize; i++)
@@ -245,9 +231,6 @@ void MpiAlltoAllv(float* all_all_v_data, double *all_all_v_time, int run,
         displs[i]      = (i == 0 ? 0 : displs[i - 1] + elem_counts[i - 1]);
         recv_displs[i] = (i == 0 ? 0 : displs[i - 1] + recv_counts[i - 1]);
     }
-    //     fprintf(stderr, "4: counts[%d %d] displs[%d %d] recv_counts[%d %d] recv_displs[%d %d]\n",
-    //             counts[0], counts[1], displs[0], displs[1],
-    //             recv_counts[0], recv_counts[1], recv_displs[0], recv_displs[1]);
     MPI_Alltoallv(in_data, elem_counts, displs, MPI_FLOAT,
             recv_data, recv_counts, recv_displs, MPI_FLOAT, comm);
 
@@ -266,12 +249,6 @@ void MpiAlltoAllv(float* all_all_v_data, double *all_all_v_time, int run,
         }
     }
 
-    // debug: print the output data
-    //     fprintf(stderr, "all_all_v_data:\n");
-    //     for (int i = 0; i < recv_counts[rank]; i++)
-    //         fprintf(stderr, "%.1f ", all_all_v_data[i]);
-    //     fprintf(stderr, "\n");
-
     // cleanup
     delete[] nray_elems;
     delete[] ray_counts;
@@ -287,29 +264,9 @@ void MpiAlltoAllv(float* all_all_v_data, double *all_all_v_time, int run,
     all_all_v_time[run] = MPI_Wtime() - t0;
 }
 
-// DIY swap
+// Reduction for DIY swap
 //
-void DiySwap(double *swap_time,                          // time (output)
-        int run,                                    // run number
-        int k,                                      // desired k value (reduction tree radix)
-        MPI_Comm comm,                              // MPI communicator
-        Decomposer& decomposer,                     // diy RegularDecomposer object
-        diy::Master& master,                        // diy Master object
-        diy::ContiguousAssigner& assigner)          // diy Assigner object
-{
-    MPI_Barrier(comm);
-    double t0 = MPI_Wtime();
-
-    diy::RegularSwapPartners  partners(decomposer, k, true);
-    diy::reduce(master, assigner, partners, &NoopSwap);
-
-    MPI_Barrier(comm);
-    swap_time[run] = MPI_Wtime() - t0;
-}
-//
-// Reduction (noop) for DIY swap
-//
-void NoopSwap(void* b_,
+void ReduceSwap(void* b_,
         const diy::ReduceProxy& rp,
         const diy::RegularSwapPartners& partners)
 {
@@ -353,10 +310,6 @@ void NoopSwap(void* b_,
             for (int j = 0; j < b->nrays; j++)
                 b->sub_size += nray_elems[j];
 
-                // debug: print number of elements per ray
-            //             for (int j = 0; j < b->nrays; j++)
-            //                 fprintf(stderr, "ray %d has %d elements\n", j, nray_elems[j]);
-
             // "shallow" dequeue ray elements (set pointer to their start)
             // first (b->nrays * sizeof(int)) bytes of the buffer contain the previous number of
             // elements per ray; element data starts after that
@@ -378,12 +331,6 @@ void NoopSwap(void* b_,
                 // a simple memcopy too, not a data reshuffling either
                 b->sub_size /= b->reduce_factor;
             }
-
-            // debug: print the received data
-            //             fprintf(stderr, "received data sub_start=%ld sub_size=%ld:\n", b->sub_start, b->sub_size);
-            //             for (int i = 0; i < b->sub_size; i++)
-            //                 fprintf(stderr, "%.1f ", b->data[b->sub_start + i]);
-            //             fprintf(stderr, "\n");
         }
     }
 
@@ -424,16 +371,30 @@ void NoopSwap(void* b_,
         // send the actual ray elements
         rp.enqueue(rp.out_link().target(i), &b->data[sub_start], sub_size);
 
-        // debug: print the sent data
-        //         fprintf(stderr, "sent data sub_start=%d sub_size=%d:\n", sub_start, sub_size);
-        //         for (int i = 0; i < sub_size; i++)
-        //             fprintf(stderr, "%.1f ", b->data[sub_start + i]);
-        //         fprintf(stderr, "\n");
-
         sub_start += sub_size;
     }
 }
+
+// DIY swap
 //
+void DiySwap(double *swap_time,                          // time (output)
+        int run,                                    // run number
+        int k,                                      // desired k value (reduction tree radix)
+        MPI_Comm comm,                              // MPI communicator
+        Decomposer& decomposer,                     // diy RegularDecomposer object
+        diy::Master& master,                        // diy Master object
+        diy::ContiguousAssigner& assigner)          // diy Assigner object
+{
+    MPI_Barrier(comm);
+    double t0 = MPI_Wtime();
+
+    diy::RegularSwapPartners  partners(decomposer, k, true);
+    diy::reduce(master, assigner, partners, &ReduceSwap);
+
+    MPI_Barrier(comm);
+    swap_time[run] = MPI_Wtime() - t0;
+}
+
 // print results
 //
 // all_all_v_time, swap_time: times
@@ -480,8 +441,8 @@ void PrintResults(double *all_all_v_time,
 
     fprintf(stderr, "\n--------------------------\n\n");
 }
-//
-// gets command line args
+
+// get command line args
 //
 // argc, argv: usual
 // min_procs: minimum number of processes (output)
@@ -530,7 +491,7 @@ void GetArgs(int argc,
         fprintf(stderr, "min_procs = %d min_rays = %d max_rays = %d nb = %d target_k = %d avg_elems = %d reduce_factor = %d\n",
                 min_procs, min_rays, max_rays, nb, target_k, avg_elems, reduce_factor);
 }
-//
+
 // main
 //
 int main(int argc, char **argv)
