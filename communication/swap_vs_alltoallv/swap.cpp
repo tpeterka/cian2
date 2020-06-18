@@ -520,7 +520,7 @@ int main(int argc, char **argv)
     GetArgs(argc, argv, min_procs, min_rays, max_rays, nblocks, target_k, avg_elems, reduce_factor);
 
     // data extents, unused
-    Bounds domain;
+    Bounds domain(dim);
     for(int i = 0; i < dim; i++)
     {
         domain.min[i] = 0.0;

@@ -556,7 +556,7 @@ int main(int argc, char **argv)
                                          &Block::load);
         diy::ContiguousAssigner   assigner(world.size(), tot_blocks);
         AddBlock                  create(master);
-        Bounds domain;
+        Bounds domain(dim);
         diy::decompose(dim, world.rank(), domain, assigner, create);
 
         // iterate over number of elements

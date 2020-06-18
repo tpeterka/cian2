@@ -115,7 +115,7 @@ int main(int argc, char **argv)
     int item_size = num_ints * sizeof(int);
 
     // data extents, unused
-    Bounds domain;
+    Bounds domain(dim);
     for(int i = 0; i < dim; i++)
     {
         domain.min[i] = 0.0;

@@ -729,7 +729,7 @@ int main(int argc, char **argv)
     GetArgs(argc, argv, min_procs, min_elems, max_elems, nblocks, target_k, op);
 
     // data extents, unused
-    Bounds domain;
+    Bounds domain(dim);
     for(int i = 0; i < dim; i++)
     {
         domain.min[i] = 0.0;
